@@ -1,0 +1,267 @@
+// Swen server schema.
+//
+// Sync model: every table that devices pull has a `seq` column. A database
+// trigger (see the init migration) stamps it from one shared sequence on every
+// insert and update, and all writes for a facility hold a per-facility
+// advisory lock. Devices pull "everything with seq > my cursor".
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  nurse
+  doctor
+  pharmacy
+  supervisor
+}
+
+model Facility {
+  id         String   @id @default(uuid()) @db.Uuid
+  name       String
+  timeZone   String   @default("America/Port-au-Prince")
+  mewsConfig Json?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  devices         Device[]
+  enrollmentCodes EnrollmentCode[]
+  staff           Staff[]
+  patients        Patient[]
+  observations    Observation[]
+  escalations     Escalation[]
+  items           Item[]
+  movements       StockMovement[]
+  cabinets        Cabinet[]
+}
+
+model Device {
+  id            String    @id @default(uuid()) @db.Uuid
+  facilityId    String    @db.Uuid
+  name          String
+  tokenHash     String    @unique
+  /// AES-256-GCM encrypted (with KEY_ENCRYPTION_KEY) key that encrypts patient data on the device.
+  keyCiphertext String
+  appVersion    String?
+  createdAt     DateTime  @default(now())
+  lastSeenAt    DateTime?
+  revokedAt     DateTime?
+
+  facility Facility       @relation(fields: [facilityId], references: [id], onDelete: Cascade)
+  sessions StaffSession[]
+
+  @@index([facilityId])
+}
+
+model EnrollmentCode {
+  id         String    @id @default(uuid()) @db.Uuid
+  facilityId String    @db.Uuid
+  codeHash   String    @unique
+  expiresAt  DateTime
+  usedAt     DateTime?
+  deviceId   String?   @db.Uuid
+  createdAt  DateTime  @default(now())
+
+  facility Facility @relation(fields: [facilityId], references: [id], onDelete: Cascade)
+
+  @@index([facilityId])
+}
+
+model Staff {
+  id             String    @id @default(uuid()) @db.Uuid
+  facilityId     String    @db.Uuid
+  name           String
+  role           Role
+  pinHash        String
+  /// When the PIN was last set; devices drop offline keys wrapped with an older PIN.
+  pinSetAt       DateTime  @default(now())
+  active         Boolean   @default(true)
+  failedAttempts Int       @default(0)
+  lockedUntil    DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  seq            BigInt    @default(0)
+
+  facility Facility       @relation(fields: [facilityId], references: [id], onDelete: Cascade)
+  sessions StaffSession[]
+
+  @@index([facilityId, seq])
+}
+
+model StaffSession {
+  id        String   @id @default(uuid()) @db.Uuid
+  staffId   String   @db.Uuid
+  deviceId  String   @db.Uuid
+  tokenHash String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  staff  Staff  @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  device Device @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+
+  @@index([staffId])
+  @@index([deviceId])
+}
+
+model Patient {
+  id           String    @id @db.Uuid
+  facilityId   String    @db.Uuid
+  ward         String
+  bed          String?
+  mrn          String?
+  givenName    String
+  familyName   String
+  sex          String
+  birthYear    Int?
+  isPregnant   Boolean   @default(false)
+  notes        String?
+  dischargedAt DateTime?
+  createdAt    DateTime
+  /// Client clock (corrected by the server offset); used for last-write-wins.
+  updatedAt    DateTime
+  updatedBy    String    @db.Uuid
+  deviceId     String?   @db.Uuid
+  receivedAt   DateTime  @default(now())
+  seq          BigInt    @default(0)
+
+  facility     Facility      @relation(fields: [facilityId], references: [id], onDelete: Cascade)
+  observations Observation[]
+  escalations  Escalation[]
+
+  @@index([facilityId, seq])
+  @@index([facilityId, ward])
+}
+
+model Observation {
+  id              String   @id @db.Uuid
+  facilityId      String   @db.Uuid
+  patientId       String   @db.Uuid
+  recordedAt      DateTime
+  recordedBy      String   @db.Uuid
+  rr              Float?
+  hr              Float?
+  sbp             Float?
+  dbp             Float?
+  tempC           Float?
+  spo2            Float?
+  avpu            String?
+  sources         Json     @default("{}")
+  /// Score the device showed the nurse.
+  deviceMewsTotal Int?
+  deviceMewsLevel String?
+  /// Score recomputed on the server with the facility's current rules.
+  mewsTotal       Int
+  mewsLevel       String
+  mewsComplete    Boolean
+  supersedesId    String?  @db.Uuid
+  note            String?
+  deviceId        String?  @db.Uuid
+  receivedAt      DateTime @default(now())
+  seq             BigInt   @default(0)
+
+  facility    Facility     @relation(fields: [facilityId], references: [id], onDelete: Cascade)
+  patient     Patient      @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  escalations Escalation[]
+
+  @@index([facilityId, seq])
+  @@index([patientId, recordedAt])
+}
+
+model Escalation {
+  id            String   @id @db.Uuid
+  facilityId    String   @db.Uuid
+  observationId String   @db.Uuid
+  patientId     String   @db.Uuid
+  action        String
+  at            DateTime
+  by            String   @db.Uuid
+  note          String?
+  deviceId      String?  @db.Uuid
+  receivedAt    DateTime @default(now())
+  seq           BigInt   @default(0)
+
+  facility    Facility    @relation(fields: [facilityId], references: [id], onDelete: Cascade)
+  observation Observation @relation(fields: [observationId], references: [id], onDelete: Cascade)
+  patient     Patient     @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  @@index([facilityId, seq])
+  @@index([observationId])
+}
+
+model Item {
+  id         String   @id @db.Uuid
+  facilityId String   @db.Uuid
+  code       String
+  nameHt     String
+  nameFr     String
+  unit       String
+  category   String?
+  minStock   Int      @default(0)
+  active     Boolean  @default(true)
+  updatedAt  DateTime
+  seq        BigInt   @default(0)
+
+  facility  Facility        @relation(fields: [facilityId], references: [id], onDelete: Cascade)
+  movements StockMovement[]
+
+  @@unique([facilityId, code])
+  @@index([facilityId, seq])
+}
+
+model StockMovement {
+  id         String   @id @db.Uuid
+  facilityId String   @db.Uuid
+  itemId     String   @db.Uuid
+  type       String
+  quantity   Int
+  lot        String?
+  /// YYYY-MM-DD, kept as text so no time zone can shift it.
+  expiryDate String?
+  location   String?
+  patientId  String?  @db.Uuid
+  at         DateTime
+  by         String   @db.Uuid
+  note       String?
+  deviceId   String?  @db.Uuid
+  receivedAt DateTime @default(now())
+  seq        BigInt   @default(0)
+
+  facility Facility @relation(fields: [facilityId], references: [id], onDelete: Cascade)
+  item     Item     @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  @@index([facilityId, seq])
+  @@index([itemId])
+}
+
+model Cabinet {
+  id         String    @id @default(uuid()) @db.Uuid
+  facilityId String    @db.Uuid
+  name       String
+  location   String?
+  tokenHash  String    @unique
+  doorOpen   Boolean   @default(false)
+  lastSeenAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  facility Facility       @relation(fields: [facilityId], references: [id], onDelete: Cascade)
+  events   CabinetEvent[]
+
+  @@index([facilityId])
+}
+
+model CabinetEvent {
+  id         String   @id @default(uuid()) @db.Uuid
+  cabinetId  String   @db.Uuid
+  type       String
+  at         DateTime
+  receivedAt DateTime @default(now())
+
+  cabinet Cabinet @relation(fields: [cabinetId], references: [id], onDelete: Cascade)
+
+  @@index([cabinetId, at])
+}

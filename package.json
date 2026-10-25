@@ -1,0 +1,26 @@
+{
+  "name": "swen",
+  "private": true,
+  "description": "Swen \u2014 offline-first MEWS vitals and medical supply inventory for low-resource clinics in Haiti",
+  "license": "MIT",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "test": "npm run test --workspace @swen/core && npm run test --workspace @swen/server",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "build": "npm run build --workspace @swen/field && npm run build --workspace @swen/server",
+    "dev:server": "npm run dev --workspace @swen/server",
+    "dev:field": "npm run dev --workspace @swen/field"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "allowScripts": {
+    "@prisma/engines@7.10.1": true,
+    "esbuild@0.28.2": true,
+    "prisma@7.10.1": true
+  },
+  "packageManager": "npm@11.21.1"
+}

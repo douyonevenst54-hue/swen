@@ -1,0 +1,12 @@
+node_modules/
+.next/
+dist/
+dev-dist/
+coverage/
+*.tsbuildinfo
+.env
+.env.local
+.env.*.local
+apps/server/src/generated/
+.DS_Store
+apps/server/public/app/
