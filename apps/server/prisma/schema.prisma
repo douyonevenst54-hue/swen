@@ -38,6 +38,7 @@ model Facility {
   items           Item[]
   movements       StockMovement[]
   cabinets        Cabinet[]
+  equipment       Equipment[]
 }
 
 model Device {
@@ -160,6 +161,10 @@ model Observation {
   mewsComplete    Boolean
   supersedesId    String?  @db.Uuid
   note            String?
+  /// The nurse scanned the patient's wristband before saving.
+  patientScanned  Boolean  @default(false)
+  /// Instrument per vital sign, e.g. {"spo2": "<equipment id>"}.
+  equipment       Json     @default("{}")
   deviceId        String?  @db.Uuid
   receivedAt      DateTime @default(now())
   seq             BigInt   @default(0)
@@ -264,4 +269,24 @@ model CabinetEvent {
   cabinet Cabinet @relation(fields: [cabinetId], references: [id], onDelete: Cascade)
 
   @@index([cabinetId, at])
+}
+
+/// Measuring instruments (oximeters, BP monitors, thermometers) with an asset tag,
+/// so any doubtful reading can be traced to the instrument that produced it.
+model Equipment {
+  id            String    @id @db.Uuid
+  facilityId    String    @db.Uuid
+  code          String
+  name          String
+  kind          String
+  serial        String?
+  lastCheckedAt DateTime?
+  active        Boolean   @default(true)
+  updatedAt     DateTime
+  seq           BigInt    @default(0)
+
+  facility Facility @relation(fields: [facilityId], references: [id], onDelete: Cascade)
+
+  @@unique([facilityId, code])
+  @@index([facilityId, seq])
 }

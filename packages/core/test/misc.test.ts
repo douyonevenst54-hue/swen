@@ -88,3 +88,15 @@ describe("schemas", () => {
     expect(PushRequestSchema.parse({}).patients).toEqual([]);
   });
 });
+
+import { codePayload, parseScannedCode } from "../src/codes";
+describe("traceability codes", () => {
+  it("round-trips every kind and treats plain barcodes as items", () => {
+    const id = "6f1c2a8e-1d2b-4c3d-9e8f-0a1b2c3d4e5f";
+    for (const kind of ["patient", "staff", "device", "equipment", "item"] as const) {
+      expect(parseScannedCode(codePayload(kind, id))).toEqual({ kind, value: id });
+    }
+    expect(parseScannedCode(" 0123456789012 ")).toEqual({ kind: "item", value: "0123456789012" });
+    expect(parseScannedCode("swen:pt:abc")).toEqual({ kind: "patient", value: "abc" });
+  });
+});

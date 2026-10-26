@@ -6,7 +6,7 @@
  * (needs a person to look at it; see Settings).
  */
 import Dexie, { type EntityTable } from "dexie";
-import type { Escalation, Item, Observation, Patient, StockMovement } from "@swen/core";
+import type { Equipment, Escalation, Item, Observation, Patient, StockMovement } from "@swen/core";
 
 export type Dirty = 0 | 1 | 2;
 
@@ -34,6 +34,7 @@ export type ObservationRow = Observation & { dirty: Dirty };
 export type EscalationRow = Escalation & { dirty: Dirty };
 export type ItemRow = Item & { dirty: Dirty };
 export type MovementRow = StockMovement & { dirty: Dirty };
+export type EquipmentRow = Equipment;
 
 export interface RejectedRow {
   id: string;
@@ -55,6 +56,7 @@ export class SwenDb extends Dexie {
   items!: EntityTable<ItemRow, "id">;
   movements!: EntityTable<MovementRow, "id">;
   rejected!: EntityTable<RejectedRow, "id">;
+  equipment!: EntityTable<EquipmentRow, "id">;
 
   constructor(name = "swen") {
     super(name);
@@ -67,6 +69,8 @@ export class SwenDb extends Dexie {
       movements: "id, itemId, at, dirty",
       rejected: "id, table",
     });
+    // v2: measuring instruments, for traceability.
+    this.version(2).stores({ equipment: "id, &code" });
   }
 }
 

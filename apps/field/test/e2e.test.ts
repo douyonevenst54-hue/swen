@@ -45,7 +45,7 @@ suite("two tablets through a real server", () => {
 
     // Record a patient with dangerous vitals, an escalation and a dispense — all offline-style (local first).
     const p = await repo.savePatient(sA, { ward: "Sal E2E", bed: "1", givenName: "Wilner", familyName: "Desir", sex: "M", birthYear: 1975 }, A.db);
-    const { observation, mews } = await repo.addObservation(sA, p, { rr: 31, hr: 128, sbp: 88, tempC: 39.1, spo2: 87, avpu: "V" }, {}, A.db);
+    const { observation, mews } = await repo.addObservation(sA, p, { rr: 31, hr: 128, sbp: 88, tempC: 39.1, spo2: 87, avpu: "V", patientScanned: true }, {}, A.db);
     expect(mews.level).toBe("high");
     await repo.addEscalation(sA, observation, "called_doctor", "Dr notified by phone", A.db);
     await repo.addMovements(sA, [{ itemId: gloves.id, type: "dispense", quantity: 2, patientId: p.id }], A.db);
@@ -73,7 +73,7 @@ suite("two tablets through a real server", () => {
     expect(pB).toMatchObject({ givenName: "Wilner", familyName: "Desir", ward: "Sal E2E" });
     const obsB = await repo.observationsFor(p.id, B.db);
     expect(obsB).toHaveLength(1);
-    expect(obsB[0]).toMatchObject({ mewsLevel: "high" });
+    expect(obsB[0]).toMatchObject({ mewsLevel: "high", patientScanned: true });
     expect((await repo.escalationsFor(p.id, B.db))[0]).toMatchObject({ action: "called_doctor" });
 
     // ---- Offline unlock on B now works, and a wrong PIN is refused -------------------

@@ -145,7 +145,7 @@ async function pullAll(auth: ApiAuth, session: Session, db: SwenDb): Promise<num
     await applyPull(session.key, data, db);
     await setMeta("clockOffsetMs", clockOffsetMs(data.serverTime, sentAt, receivedAt), db);
     const c = data.changes;
-    pulled += c.patients.length + c.observations.length + c.escalations.length + c.items.length + c.movements.length;
+    pulled += c.patients.length + c.observations.length + c.escalations.length + c.items.length + c.movements.length + (c.equipment?.length ?? 0);
     if (!data.hasMore) break;
   }
   return pulled;
@@ -156,7 +156,7 @@ export async function applyPull(key: CryptoKey, data: PullResponse, db: SwenDb):
   // Encrypt outside the transaction: IndexedDB transactions close on non-IDB awaits.
   const sealedPatients = await Promise.all(c.patients.map((p) => sealPatient(key, p, 0)));
 
-  await db.transaction("rw", [db.meta, db.patients, db.items, db.observations, db.escalations, db.movements], async () => {
+  await db.transaction("rw", [db.meta, db.patients, db.items, db.observations, db.escalations, db.movements, db.equipment], async () => {
     // Last-write-wins tables: keep a local unsynced edit only if it is newer.
     const localPatients = await db.patients.bulkGet(sealedPatients.map((p) => p.id));
     const patientsToPut = sealedPatients.filter((incoming, i) => {
@@ -174,6 +174,8 @@ export async function applyPull(key: CryptoKey, data: PullResponse, db: SwenDb):
     await db.observations.bulkPut(c.observations.map((o) => ({ ...o, dirty: 0 as const })));
     await db.escalations.bulkPut(c.escalations.map((e) => ({ ...e, dirty: 0 as const })));
     await db.movements.bulkPut(c.movements.map((m) => ({ ...m, dirty: 0 as const })));
+    // Instruments are managed on the dashboard only.
+    if (c.equipment?.length) await db.equipment.bulkPut(c.equipment);
 
     await setMeta("pullCursor", data.cursor, db);
     await setMeta("roster", data.staff, db);

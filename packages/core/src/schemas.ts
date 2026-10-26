@@ -58,8 +58,24 @@ export const ObservationSchema = z.object({
   mewsLevel: z.enum(["low", "medium", "high"]).nullable().optional(),
   supersedesId: uuid.nullable().optional(),
   note: z.string().max(1000).nullable().optional(),
+  /** True when the nurse scanned the patient's wristband before saving. */
+  patientScanned: z.boolean().default(false),
+  /** Which registered instrument measured each vital sign, e.g. { spo2: <equipment id> }. */
+  equipment: z.record(z.string(), uuid).default({}),
 });
 export type Observation = z.infer<typeof ObservationSchema>;
+
+export const EquipmentSchema = z.object({
+  id: uuid,
+  code: z.string().min(1).max(64),
+  name: z.string().min(1).max(120),
+  kind: z.enum(["oximeter", "bp", "thermometer", "other"]),
+  serial: z.string().max(120).nullable().optional(),
+  lastCheckedAt: isoDateTime.nullable().optional(),
+  active: z.boolean(),
+  updatedAt: isoDateTime,
+});
+export type Equipment = z.infer<typeof EquipmentSchema>;
 
 export const EscalationAction = z.enum([
   "informed_nurse_in_charge",
@@ -180,6 +196,7 @@ export interface PullResponse {
     escalations: Escalation[];
     items: Item[];
     movements: StockMovement[];
+    equipment: Equipment[];
   };
 }
 

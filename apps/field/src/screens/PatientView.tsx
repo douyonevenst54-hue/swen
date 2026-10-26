@@ -4,7 +4,7 @@ import { Banner, Empty, MewsBadge, MewsPanel, TopBar } from "../app/components";
 import { go } from "../app/router";
 import { useApp, useSession } from "../app/store";
 import type { EscalationRow, ObservationRow } from "../lib/db";
-import { escalationsFor, getPatient, observationsFor, scoreFor, setDischarged, type LocalPatient } from "../lib/repo";
+import { escalationsFor, getPatient, listEquipment, observationsFor, scoreFor, setDischarged, type LocalPatient } from "../lib/repo";
 
 const v = (n: number | null | undefined, digits = 0) => (n == null ? "—" : n.toFixed(digits));
 
@@ -14,12 +14,14 @@ export function PatientView({ id }: { id: string }) {
   const [patient, setPatient] = useState<LocalPatient | null | undefined>(undefined);
   const [obs, setObs] = useState<ObservationRow[]>([]);
   const [esc, setEsc] = useState<EscalationRow[]>([]);
+  const [equipment, setEquipment] = useState<Map<string, { code: string }>>(new Map());
 
   useEffect(() => {
-    void Promise.all([getPatient(session, id), observationsFor(id), escalationsFor(id)]).then(([p, o, e]) => {
+    void Promise.all([getPatient(session, id), observationsFor(id), escalationsFor(id), listEquipment()]).then(([p, o, e, eq]) => {
       setPatient(p);
       setObs(o);
       setEsc(e);
+      setEquipment(new Map(eq.map((x) => [x.id, x])));
     });
   }, [id, session, dataVersion]);
 
@@ -139,6 +141,10 @@ export function PatientView({ id }: { id: string }) {
                       <div><dt>SpO₂</dt><dd>{v(o.spo2)}</dd></div>
                       <div><dt>AVPU</dt><dd>{o.avpu ?? "—"}</dd></div>
                     </dl>
+                    <p className="small muted trace-line">
+                      {o.patientScanned ? `✓ ${t("dash.scanned")}` : t("dash.notScanned")}
+                      {Object.keys(o.equipment ?? {}).length > 0 && ` · ${[...new Set(Object.values(o.equipment ?? {}))].map((id) => equipment.get(id)?.code ?? "?").join(", ")}`}
+                    </p>
                     {o.note && <p className="small prewrap">{o.note}</p>}
                     {actions.map((a) => (
                       <p key={a.id} className="small esc-line">

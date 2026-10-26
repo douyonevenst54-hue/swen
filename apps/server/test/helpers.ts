@@ -64,6 +64,8 @@ export function observation(patientId: string, recordedBy: string, overrides: Re
     mewsLevel: "low" as const,
     supersedesId: null,
     note: null,
+    patientScanned: false,
+    equipment: {} as Record<string, string>,
     ...overrides,
   };
 }

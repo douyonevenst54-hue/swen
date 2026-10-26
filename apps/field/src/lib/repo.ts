@@ -136,6 +136,10 @@ export interface VitalsDraft {
   avpu?: Avpu | null;
   sources?: Observation["sources"];
   note?: string | null;
+  /** The patient's wristband was scanned and matched. */
+  patientScanned?: boolean;
+  /** Instrument per vital sign. */
+  equipment?: Observation["equipment"];
 }
 
 export function scoreFor(patient: Pick<Patient, "birthYear" | "isPregnant">, v: VitalsDraft, cfg: MewsConfig, at: Date = new Date()): MewsResult {
@@ -170,6 +174,8 @@ export async function addObservation(
     mewsLevel: mews.level,
     supersedesId: opts.supersedes?.id ?? null,
     note: v.note?.trim() || null,
+    patientScanned: v.patientScanned ?? false,
+    equipment: v.equipment ?? {},
   };
   await db.observations.put({ ...observation, dirty: 1 });
   return { observation, mews };
@@ -260,4 +266,14 @@ export async function pendingCount(db: SwenDb = localDb()): Promise<number> {
     db.movements.where("dirty").equals(1).count(),
   ]);
   return counts.reduce((a, b) => a + b, 0);
+}
+
+// ---- Measuring instruments ------------------------------------------------------
+
+export async function equipmentByCode(code: string, db: SwenDb = localDb()) {
+  return db.equipment.where("code").equalsIgnoreCase(code.trim()).first();
+}
+
+export async function listEquipment(db: SwenDb = localDb()) {
+  return db.equipment.toArray();
 }

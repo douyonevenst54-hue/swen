@@ -1,4 +1,5 @@
-import { LOCALES, LOCALE_NAMES, type MessageKey } from "@swen/core";
+import { LOCALES, LOCALE_NAMES, parseScannedCode, type MessageKey } from "@swen/core";
+import { ScanSheet } from "../app/ScanSheet";
 import { useEffect, useState } from "react";
 import { Banner } from "../app/components";
 import { useApp } from "../app/store";
@@ -13,6 +14,7 @@ export function Unlock() {
   const [pin, setPin] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [scanning, setScanning] = useState(false);
 
   // Keep the staff list current when there is a connection.
   useEffect(() => {
@@ -62,7 +64,29 @@ export function Unlock() {
           </div>
         </div>
         {lockReason === "auto" && <Banner tone="info">{t("unlock.autoLocked")}</Banner>}
-        <h2>{t("unlock.title")}</h2>
+        <div className="row-between">
+          <h2>{t("unlock.title")}</h2>
+          {active.length > 0 && (
+            <button className="btn btn-quiet small" onClick={() => setScanning(true)}>
+              {t("scan.staffBadge")}
+            </button>
+          )}
+        </div>
+        {scanning && (
+          <ScanSheet
+            title={t("scan.staffBadge")}
+            onClose={() => setScanning(false)}
+            onCode={(raw) => {
+              const code = parseScannedCode(raw);
+              if (code.kind !== "staff") return t("scan.wrongKind");
+              if (!active.some((s) => s.id === code.value)) return t("scan.unknown", { code: code.value.slice(0, 8) });
+              setStaffId(code.value);
+              setPin("");
+              setError(null);
+              setScanning(false);
+            }}
+          />
+        )}
         {active.length === 0 ? (
           <Banner tone="warn">{t("unlock.noStaff")}</Banner>
         ) : (

@@ -1,4 +1,5 @@
-import { LEVEL_RANK, latestByPatient, minutesOverdue, type MewsLevel } from "@swen/core";
+import { LEVEL_RANK, latestByPatient, minutesOverdue, parseScannedCode, type MewsLevel } from "@swen/core";
+import { ScanSheet } from "../app/ScanSheet";
 import { useEffect, useMemo, useState } from "react";
 import { BottomNav, Empty, Fab, MewsBadge, TopBar } from "../app/components";
 import { go } from "../app/router";
@@ -28,6 +29,7 @@ export function Ward() {
     }
   });
   const [showDischarged, setShowDischarged] = useState(false);
+  const [scanning, setScanning] = useState(false);
 
   useEffect(() => {
     let alive = true;
@@ -78,7 +80,12 @@ export function Ward() {
       <TopBar title={ward || t("patients.allWards")} sub={device?.facility.name} />
       <main className="content">
         <div className="toolbar">
-          <input type="search" value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t("patients.searchPlaceholder")} aria-label={t("common.search")} />
+          <div className="toolbar">
+            <input type="search" value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t("patients.searchPlaceholder")} aria-label={t("common.search")} />
+            <button className="btn btn-primary" onClick={() => setScanning(true)}>
+              {t("scan.patient")}
+            </button>
+          </div>
           {wards.length > 1 && (
             <div className="chips" role="tablist">
               <button className={!ward ? "on" : ""} onClick={() => pickWard("")}>
@@ -133,6 +140,20 @@ export function Ward() {
           {t("patients.showDischarged")}
         </label>
       </main>
+      {scanning && (
+        <ScanSheet
+          title={t("scan.patient")}
+          onClose={() => setScanning(false)}
+          onCode={(raw) => {
+            const code = parseScannedCode(raw);
+            if (code.kind !== "patient") return t("scan.wrongKind");
+            const found = rows?.find((r) => r.p.id === code.value);
+            if (!found) return t("scan.unknown", { code: code.value.slice(0, 8) });
+            setScanning(false);
+            go(`/patient/${found.p.id}`);
+          }}
+        />
+      )}
       <Fab href="/patient/new" label={t("patients.add")} />
       <BottomNav current="ward" />
     </>

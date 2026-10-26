@@ -337,3 +337,11 @@ input[type="search"] { -webkit-appearance: none; appearance: none; }
 .keypad button:active { background: var(--blue-soft); }
 .keypad .key-ok { background: var(--blue); color: var(--blue-ink); font-size: 1rem; }
 .keypad .key-del { font-size: 1.3rem; }
+
+/* ---- Scanner sheet & traceability ---------------------------------------- */
+.sheet { position: fixed; inset: 0; z-index: 30; background: rgba(0, 0, 0, 0.55); display: grid; place-items: end center; padding: 12px; }
+@media (min-width: 700px) { .sheet { place-items: center; } }
+.sheet-card { width: min(560px, 100%); max-height: 92vh; overflow: auto; background: var(--surface); border-radius: 18px; padding: 16px; display: grid; gap: 12px; }
+.instruments { display: grid; gap: 6px; }
+.trace-line { margin: 0; }
+.row-between { display: flex; justify-content: space-between; align-items: center; gap: 8px; }

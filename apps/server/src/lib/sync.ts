@@ -8,6 +8,7 @@ import {
   incomingWins,
   RETRYABLE_REASONS,
   resolveMewsConfig,
+  type Equipment,
   type Escalation,
   type Item,
   type Observation,
@@ -163,6 +164,9 @@ export async function pushChanges(db: Db, ctx: DeviceContext, body: PushRequest,
           })
         ).map((p) => [p.id, p]),
       );
+      const equipmentIds = new Set(
+        (await tx.equipment.findMany({ where: { facilityId: ctx.facilityId }, select: { id: true } })).map((e) => e.id),
+      );
       const toCreate = [];
       for (const o of body.observations) {
         if (otherFacility.has(o.id)) continue;
@@ -202,6 +206,9 @@ export async function pushChanges(db: Db, ctx: DeviceContext, body: PushRequest,
           mewsComplete: mews.complete,
           supersedesId: o.supersedesId ?? null,
           note: o.note ?? null,
+          patientScanned: o.patientScanned ?? false,
+          // Keep only instruments registered to this facility.
+          equipment: Object.fromEntries(Object.entries(o.equipment ?? {}).filter(([, id]) => equipmentIds.has(id))),
           deviceId: ctx.deviceId,
         });
         accepted.push(o.id);
@@ -302,11 +309,20 @@ export const toPatient = (p: {
 export const toObservation = (o: {
   id: string; patientId: string; recordedAt: Date; recordedBy: string; rr: number | null; hr: number | null; sbp: number | null; dbp: number | null;
   tempC: number | null; spo2: number | null; avpu: string | null; sources: unknown; mewsTotal: number; mewsLevel: string; supersedesId: string | null; note: string | null;
+  patientScanned: boolean; equipment: unknown;
 }): Observation => ({
   id: o.id, patientId: o.patientId, recordedAt: iso(o.recordedAt), recordedBy: o.recordedBy,
   rr: o.rr, hr: o.hr, sbp: o.sbp, dbp: o.dbp, tempC: o.tempC, spo2: o.spo2, avpu: o.avpu as Observation["avpu"],
   sources: (o.sources ?? {}) as Observation["sources"], mewsTotal: o.mewsTotal, mewsLevel: o.mewsLevel as Observation["mewsLevel"],
   supersedesId: o.supersedesId, note: o.note,
+  patientScanned: o.patientScanned, equipment: (o.equipment ?? {}) as Observation["equipment"],
+});
+
+export const toEquipment = (e: {
+  id: string; code: string; name: string; kind: string; serial: string | null; lastCheckedAt: Date | null; active: boolean; updatedAt: Date;
+}): Equipment => ({
+  id: e.id, code: e.code, name: e.name, kind: e.kind as Equipment["kind"], serial: e.serial,
+  lastCheckedAt: isoN(e.lastCheckedAt), active: e.active, updatedAt: iso(e.updatedAt),
 });
 
 export const toEscalation = (e: { id: string; observationId: string; patientId: string; action: string; at: Date; by: string; note: string | null }): Escalation => ({
@@ -343,7 +359,7 @@ export async function pullChanges(db: Db, facilityId: string, cursorRaw: string 
 
   // All reads must come from ONE snapshot. Otherwise a push committing between
   // two queries could put a later seq in this page and an earlier one in no page.
-  const [facility, staff, patients, observations, escalations, items, movements] = await db.$transaction(
+  const [facility, staff, patients, observations, escalations, items, movements, equipment] = await db.$transaction(
     async (tx) => [
       await tx.facility.findUniqueOrThrow({ where: { id: facilityId }, select: { id: true, name: true, mewsConfig: true } }),
       await listStaff(tx, facilityId),
@@ -352,6 +368,7 @@ export async function pullChanges(db: Db, facilityId: string, cursorRaw: string 
       await tx.escalation.findMany({ where, ...page }),
       await tx.item.findMany({ where, ...page }),
       await tx.stockMovement.findMany({ where, ...page }),
+      await tx.equipment.findMany({ where, ...page }),
     ] as const,
     { isolationLevel: "RepeatableRead", maxWait: 10_000, timeout: 30_000 },
   );
@@ -361,7 +378,8 @@ export async function pullChanges(db: Db, facilityId: string, cursorRaw: string 
     | { seq: bigint; kind: "observations"; v: Observation }
     | { seq: bigint; kind: "escalations"; v: Escalation }
     | { seq: bigint; kind: "items"; v: Item }
-    | { seq: bigint; kind: "movements"; v: StockMovement };
+    | { seq: bigint; kind: "movements"; v: StockMovement }
+    | { seq: bigint; kind: "equipment"; v: Equipment };
 
   const all: Tagged[] = [
     ...patients.map((r) => ({ seq: r.seq, kind: "patients" as const, v: toPatient(r) })),
@@ -369,10 +387,11 @@ export async function pullChanges(db: Db, facilityId: string, cursorRaw: string 
     ...escalations.map((r) => ({ seq: r.seq, kind: "escalations" as const, v: toEscalation(r) })),
     ...items.map((r) => ({ seq: r.seq, kind: "items" as const, v: toItem(r) })),
     ...movements.map((r) => ({ seq: r.seq, kind: "movements" as const, v: toMovement(r) })),
+    ...equipment.map((r) => ({ seq: r.seq, kind: "equipment" as const, v: toEquipment(r) })),
   ].sort((a, b) => (a.seq < b.seq ? -1 : a.seq > b.seq ? 1 : 0));
 
   const taken = all.slice(0, limit);
-  const changes: PullResponse["changes"] = { patients: [], observations: [], escalations: [], items: [], movements: [] };
+  const changes: PullResponse["changes"] = { patients: [], observations: [], escalations: [], items: [], movements: [], equipment: [] };
   for (const t of taken) (changes[t.kind] as unknown[]).push(t.v);
 
   return {

@@ -19,9 +19,14 @@ export default async function PatientsPage({ searchParams }: { searchParams: Pro
     <>
       <div className="page-head">
         <h1>{t("dash.patients")}</h1>
+        <div className="inline">
+        <a className="btn btn-secondary" href={`/labels?type=patients${ward ? `&ward=${encodeURIComponent(ward)}` : ""}`}>
+          {t("dash.printWristbands")}
+        </a>
         <a className="btn btn-secondary" href="/api/export/observations">
           {t("dash.export")}
         </a>
+        </div>
       </div>
       <Section
         title={ward ?? t("patients.allWards")}

@@ -17,11 +17,15 @@ export default async function PatientPage({ params }: { params: Promise<{ id: st
 
   const patient = await db().patient.findFirst({ where: { id, facilityId: facility.id } });
   if (!patient) notFound();
-  const [observations, escalations, names] = await Promise.all([
+  const [observations, escalations, names, equipment, devices] = await Promise.all([
     db().observation.findMany({ where: { patientId: id }, orderBy: { recordedAt: "desc" }, take: 200 }),
     db().escalation.findMany({ where: { patientId: id }, orderBy: { at: "desc" } }),
     staffNames(db(), facility.id),
+    db().equipment.findMany({ where: { facilityId: facility.id }, select: { id: true, code: true } }),
+    db().device.findMany({ where: { facilityId: facility.id }, select: { id: true, name: true } }),
   ]);
+  const eqCode = new Map(equipment.map((e) => [e.id, e.code]));
+  const devName = new Map(devices.map((d) => [d.id, d.name]));
   const cfg = resolveMewsConfig(facility.mewsConfig);
   const effective = effectiveObservations(observations);
   const supersededIds = new Set(observations.map((o) => o.supersedesId).filter(Boolean));
@@ -72,6 +76,9 @@ export default async function PatientPage({ params }: { params: Promise<{ id: st
                 <th className="num">SpO₂</th>
                 <th>AVPU</th>
                 <th>{t("dash.recordedBy")}</th>
+                <th>{t("dash.device")}</th>
+                <th>{t("dash.instrument")}</th>
+                <th>{t("dash.scanned")}</th>
                 <th>{t("escalation.title")}</th>
               </tr>
             </thead>
@@ -97,6 +104,11 @@ export default async function PatientPage({ params }: { params: Promise<{ id: st
                     <td className="num">{fmt(o.spo2)}</td>
                     <td>{o.avpu ?? "—"}</td>
                     <td className="muted">{who(o.recordedBy)}</td>
+                    <td className="muted small">{o.deviceId ? (devName.get(o.deviceId) ?? "—") : "—"}</td>
+                    <td className="small">
+                      {[...new Set(Object.values((o.equipment ?? {}) as Record<string, string>))].map((id) => eqCode.get(id) ?? "?").join(", ") || "—"}
+                    </td>
+                    <td>{o.patientScanned ? <span className="pill pill-ok">✓</span> : <span className="muted small">—</span>}</td>
                     <td className="small">
                       {esc.length
                         ? esc.map((e) => (

@@ -148,10 +148,25 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--brand); out
 .label svg { width: 120px; height: 120px; }
 .label strong { display: block; font-size: 0.9rem; }
 .label span { font-size: 0.75rem; }
+
+.tabs { display: flex; gap: 6px; flex-wrap: wrap; }
+.tabs a { padding: 6px 12px; border-radius: 999px; border: 1px solid var(--line); color: var(--ink); }
+.tabs a.on { background: var(--brand); color: var(--brand-ink); border-color: var(--brand); }
+.label-text { display: grid; gap: 2px; }
+.label-qr svg { width: 120px; height: 120px; display: block; margin: 0 auto; }
+/* Patient wristband: long strip, QR at one end, readable name, prints 2 per row */
+.wristbands { display: grid; grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); gap: 10px; }
+.wristband { display: grid; grid-template-columns: 76px 1fr; gap: 10px; align-items: center; background: #fff; color: #000;
+  border: 1px dashed #999; border-radius: 10px; padding: 6px 12px; height: 92px; break-inside: avoid; }
+.wristband .label-qr svg { width: 76px; height: 76px; }
+.wristband strong { font-size: 1rem; }
+.wristband span { font-size: 0.8rem; }
+
 @media print {
   .side, .no-print { display: none !important; }
   .shell { display: block; }
   .main { padding: 0; }
   body { background: #fff; }
   .labels { grid-template-columns: repeat(4, 1fr); }
+  .wristbands { grid-template-columns: repeat(2, 1fr); }
 }

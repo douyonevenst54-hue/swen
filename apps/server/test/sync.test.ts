@@ -251,6 +251,21 @@ suite("push and pull", () => {
     expect(after.changes.observations.map((o) => o.id).sort()).toEqual([slowObs.id, fastObs.id].sort());
   });
 
+  it("records which instrument and whether the wristband was scanned, ignoring unknown instruments", async () => {
+    const { nurse, ctx } = await setup();
+    const oxi = await db.equipment.create({ data: { id: randomUUID(), facilityId: ctx.facilityId, code: "OXI-01", name: "Oximeter 1", kind: "oximeter", updatedAt: new Date() } });
+    const p = patient(nurse.id);
+    await pushChanges(db, ctx, { ...emptyPush(), patients: [p] });
+    const o = observation(p.id, nurse.id, { patientScanned: true, equipment: { spo2: oxi.id, hr: oxi.id, tempC: randomUUID() } });
+    await pushChanges(db, ctx, { ...emptyPush(), observations: [o] });
+    const stored = await db.observation.findUniqueOrThrow({ where: { id: o.id } });
+    expect(stored.patientScanned).toBe(true);
+    expect(stored.equipment).toEqual({ spo2: oxi.id, hr: oxi.id });
+    const pulled = await pullChanges(db, ctx.facilityId, null);
+    expect(pulled.changes.equipment.map((e) => e.code)).toEqual(["OXI-01"]);
+    expect(pulled.changes.observations[0]).toMatchObject({ patientScanned: true, equipment: { spo2: oxi.id } });
+  });
+
   it("includes the facility's MEWS rules in every pull", async () => {
     const { facility, ctx } = await setup();
     await db.facility.update({ where: { id: facility.id }, data: { mewsConfig: { custom: true } } });

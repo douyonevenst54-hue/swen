@@ -22,6 +22,8 @@ export default async function DashboardLayout({ children }: { children: React.Re
           <Link href="/">{t("dash.overview")}</Link>
           <Link href="/patients">{t("dash.patients")}</Link>
           <Link href="/inventory">{t("dash.inventory")}</Link>
+          <Link href="/trace">{t("dash.trace")}</Link>
+          <Link href="/labels">{t("dash.labels")}</Link>
           <Link href="/admin">{t("dash.admin")}</Link>
         </nav>
         <div className="side-bottom">

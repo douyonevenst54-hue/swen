@@ -1,5 +1,8 @@
 import { DEFAULT_MEWS_CONFIG, resolveMewsConfig, Role, type MessageKey } from "@swen/core";
 import {
+  createEquipment,
+  markEquipmentChecked,
+  toggleEquipment,
   createCabinetAction,
   createFacility,
   createStaff,
@@ -12,6 +15,8 @@ import {
 } from "@/app/actions";
 import { ActionForm } from "@/components/ActionForm";
 import { Section } from "@/components/ui";
+import Link from "next/link";
+import { EQUIPMENT_KINDS } from "@swen/core";
 import { db } from "@/lib/db";
 import { currentFacility } from "@/lib/facility";
 import { getI18n } from "@/lib/locale";
@@ -43,11 +48,12 @@ export default async function AdminPage() {
 
   if (!facility) return facilitySection;
 
-  const [staff, devices, cabinets, codes] = await Promise.all([
+  const [staff, devices, cabinets, codes, equipment] = await Promise.all([
     db().staff.findMany({ where: { facilityId: facility.id }, orderBy: [{ active: "desc" }, { name: "asc" }] }),
     db().device.findMany({ where: { facilityId: facility.id }, orderBy: [{ revokedAt: "asc" }, { lastSeenAt: "desc" }] }),
     db().cabinet.findMany({ where: { facilityId: facility.id }, orderBy: { name: "asc" } }),
     db().enrollmentCode.findMany({ where: { facilityId: facility.id, usedAt: null, expiresAt: { gt: new Date() } }, orderBy: { createdAt: "desc" } }),
+    db().equipment.findMany({ where: { facilityId: facility.id }, orderBy: [{ active: "desc" }, { code: "asc" }] }),
   ]);
   const config = resolveMewsConfig(facility.mewsConfig);
 
@@ -57,7 +63,7 @@ export default async function AdminPage() {
         <h1>{t("dash.admin")}</h1>
       </div>
 
-      <Section title={t("dash.staff")}>
+      <Section title={t("dash.staff")} actions={<Link href="/labels?type=staff">{t("dash.printBadges")}</Link>}>
         <div className="table-wrap">
           <table>
             <thead>
@@ -137,7 +143,7 @@ export default async function AdminPage() {
           )}
         </Section>
 
-        <Section title={t("dash.devices")}>
+        <Section title={t("dash.devices")} actions={<Link href="/labels?type=devices">{t("dash.printDeviceLabels")}</Link>}>
           {devices.length === 0 ? (
             <p className="muted">{t("common.none")}</p>
           ) : (
@@ -191,6 +197,70 @@ export default async function AdminPage() {
               <label>
                 {t("inventory.location")} <span className="muted">({t("common.optional")})</span>
                 <input name="location" maxLength={80} />
+              </label>
+            </div>
+          </ActionForm>
+        </Section>
+
+        <Section title={t("dash.equipment")} actions={<Link href="/labels?type=equipment">{t("dash.printEquipmentLabels")}</Link>}>
+          {equipment.length > 0 && (
+            <ul className="list" style={{ marginBottom: 12 }}>
+              {equipment.map((e) => (
+                <li key={e.id} className={e.active ? "" : "muted"}>
+                  <span>
+                    <strong>{e.code}</strong> · {e.name}
+                    <br />
+                    <span className="small muted">
+                      {t(`equipment.kind.${e.kind}` as MessageKey)}
+                      {e.serial ? ` · ${e.serial}` : ""} · {t("dash.lastChecked")}: {e.lastCheckedAt ? fmtRelative(e.lastCheckedAt) : "—"} ·{" "}
+                      <Link href={`/trace?equipment=${e.id}`}>{t("dash.trace")}</Link>
+                    </span>
+                  </span>
+                  <span className="inline">
+                    {e.active && (
+                      <form action={markEquipmentChecked}>
+                        <input type="hidden" name="equipmentId" value={e.id} />
+                        <button className="btn btn-secondary" type="submit">
+                          {t("dash.markChecked")}
+                        </button>
+                      </form>
+                    )}
+                    <form action={toggleEquipment}>
+                      <input type="hidden" name="equipmentId" value={e.id} />
+                      <button className="btn btn-secondary" type="submit">
+                        {e.active ? t("dash.deactivate") : t("dash.activate")}
+                      </button>
+                    </form>
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+          <ActionForm action={createEquipment} submitLabel={t("dash.addEquipment")}>
+            <div className="form-row">
+              <label>
+                {t("dash.equipmentKind")}
+                <select name="kind" defaultValue="oximeter">
+                  {EQUIPMENT_KINDS.map((k) => (
+                    <option key={k} value={k}>
+                      {t(`equipment.kind.${k}` as MessageKey)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                {t("dash.name")}
+                <input name="name" required maxLength={120} placeholder="Oksimèt Sal A" />
+              </label>
+            </div>
+            <div className="form-row">
+              <label>
+                {t("dash.code")} <span className="muted">({t("common.optional")})</span>
+                <input name="code" maxLength={64} placeholder="OXI-001" />
+              </label>
+              <label>
+                {t("dash.serial")} <span className="muted">({t("common.optional")})</span>
+                <input name="serial" maxLength={120} />
               </label>
             </div>
           </ActionForm>

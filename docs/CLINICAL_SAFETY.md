@@ -61,7 +61,22 @@ Any medium or high score opens a screen asking **what the nurse did**
 postponed but not hidden: the ward list and the dashboard flag every medium or
 high score with no recorded action, and every patient overdue for a re-check.
 
-## 4. Language
+## 4. Traceability
+
+Every reading records **who** took it (staff), **on which tablet**, **with which
+instrument**, and whether the nurse **scanned the patient's wristband**.
+
+- **Wristbands** (Dashboard → QR labels → patient wristbands): before saving
+  vitals the app asks to scan the wristband. A wristband belonging to another
+  patient shows *SE PA BON PASYAN AN* with that patient's name and blocks saving.
+  Scanning is encouraged, not forced, so a missing printer never stops care; the
+  dashboard shows what share of readings were scanned.
+- **Instruments** (Administration → Measuring equipment): give each oximeter,
+  BP monitor and thermometer an asset tag. When a device is found faulty, open
+  **Traceability**, pick the instrument, and see every patient it measured.
+- **Staff badges** let a nurse pick their name by scanning; the PIN is still required.
+
+## 5. Language
 
 All clinical wording exists in Haitian Creole, French and English
 (`packages/core/src/i18n`). **Have Haitian nurses review the Kreyòl
@@ -69,7 +84,7 @@ wording** before the pilot, especially the AVPU descriptions and the alert
 messages. An automated test checks that every message exists in all three
 languages with the same placeholders.
 
-## 5. What the system cannot do
+## 6. What the system cannot do
 
 - It cannot know about a patient whose vitals were never entered.
 - A device that is offline cannot alert anyone else; the alert is on that
@@ -78,12 +93,13 @@ languages with the same placeholders.
   that has never synced uses its own clock.
 - MEWS is a population tool: a normal score does not mean a patient is safe.
 
-## 6. Before the pilot — checklist
+## 7. Before the pilot — checklist
 
 - [ ] Clinical lead has reviewed the thresholds and response times.
 - [ ] Nurses have reviewed the Kreyòl and French wording.
 - [ ] Escalation actions match the facility's real call chain.
 - [ ] Staff trained: entering vitals, corrections, escalation, what to do
       when the tablet is dead (paper fallback).
+- [ ] Wristbands printed for admitted patients and asset tags on every instrument.
 - [ ] A paper chart remains the legal record until the facility decides otherwise.
 - [ ] Ethics / institutional approval if outcomes will be studied or published.

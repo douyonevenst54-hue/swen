@@ -1,9 +1,10 @@
-import { AVPU, checkVitals, hasBlockingIssue, type Avpu, type MessageKey, type Observation } from "@swen/core";
+import { AVPU, checkVitals, EQUIPMENT_MEASURES, hasBlockingIssue, parseScannedCode, type Avpu, type Equipment, type MessageKey, type Observation } from "@swen/core";
+import { ScanSheet } from "../app/ScanSheet";
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { Banner, Field, MewsPanel, Segmented, TopBar } from "../app/components";
 import { useApp, useSession } from "../app/store";
 import { bleSupported, readOnce, type BleKind } from "../lib/ble";
-import { addObservation, getPatient, observationsFor, scoreFor, type LocalPatient, type VitalsDraft } from "../lib/repo";
+import { addObservation, equipmentByCode, getPatient, listPatients, observationsFor, scoreFor, type LocalPatient, type VitalsDraft } from "../lib/repo";
 
 type NumKey = "rr" | "hr" | "sbp" | "dbp" | "tempC" | "spo2";
 const NUM_KEYS: NumKey[] = ["rr", "hr", "sbp", "dbp", "tempC", "spo2"];
@@ -37,6 +38,11 @@ export function RecordVitals({ patientId, correctId }: { patientId: string; corr
   const [busy, setBusy] = useState(false);
   const [ble, setBle] = useState<{ kind: BleKind; status: "waiting" | "error"; message?: string } | null>(null);
   const [bleMsg, setBleMsg] = useState<string | null>(null);
+  // Traceability: wristband check and the instruments used.
+  const [identity, setIdentity] = useState<"unchecked" | "ok">("unchecked");
+  const [wrongPatient, setWrongPatient] = useState<string | null>(null);
+  const [instruments, setInstruments] = useState<Equipment[]>([]);
+  const [scan, setScan] = useState<"patient" | "equipment" | null>(null);
   const abortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
@@ -102,12 +108,20 @@ export function RecordVitals({ patientId, correctId }: { patientId: string; corr
 
   async function save(e: FormEvent) {
     e.preventDefault();
-    if (!patient || !hasAny || blocking || (needsConfirm && !confirmed)) return;
+    if (!patient || !hasAny || blocking || (needsConfirm && !confirmed) || wrongPatient) return;
     setBusy(true);
     try {
       const clean: Record<string, "manual" | "ble"> = {};
       for (const [k, s] of Object.entries(sources)) if (values[k as NumKey] != null) clean[k] = s;
-      const { observation, mews: score } = await addObservation(session, patient, { ...values, sources: clean, note }, { supersedes: original ?? undefined });
+      // Each vital sign is linked to the instrument that measures that kind of value.
+      const equipment: Record<string, string> = {};
+      for (const eq of instruments) for (const k of EQUIPMENT_MEASURES[eq.kind]) if (values[k] != null && !equipment[k]) equipment[k] = eq.id;
+      const { observation, mews: score } = await addObservation(
+        session,
+        patient,
+        { ...values, sources: clean, note, patientScanned: identity === "ok", equipment },
+        { supersedes: original ?? undefined },
+      );
       changed();
       // Anything above routine monitoring asks the nurse what they did.
       const next = score.level !== "low" ? `#/escalate/${observation.id}` : `#/patient/${patient.id}`;
@@ -140,6 +154,71 @@ export function RecordVitals({ patientId, correctId }: { patientId: string; corr
       <main className="content vitals-layout">
         <form className="vitals-form" onSubmit={save} noValidate>
           {original && <Banner tone="info">{t("vitals.correcting", { time: fmtTime(original.recordedAt) })}</Banner>}
+
+          {wrongPatient ? (
+            <Banner tone="danger" action={<button type="button" className="btn btn-quiet" onClick={() => setScan("patient")}>{t("scan.patient")}</button>}>
+              {t("vitals.identityWrong", { name: wrongPatient })}
+            </Banner>
+          ) : identity === "ok" ? (
+            <Banner tone="ok">✓ {t("vitals.identityOk")}</Banner>
+          ) : (
+            <Banner tone="warn" action={<button type="button" className="btn btn-primary" onClick={() => setScan("patient")}>{t("scan.patient")}</button>}>
+              {t("vitals.confirmIdentity")}
+            </Banner>
+          )}
+
+          <div className="instruments">
+            <span className="field-label">{t("vitals.instruments")}</span>
+            <div className="chips">
+              {instruments.map((eq) => (
+                <button type="button" key={eq.id} className="on" onClick={() => setInstruments((list) => list.filter((x) => x.id !== eq.id))} title="✕">
+                  {eq.code} · {t(`equipment.kind.${eq.kind}` as MessageKey)} ✕
+                </button>
+              ))}
+              <button type="button" onClick={() => setScan("equipment")}>
+                + {t("scan.equipment")}
+              </button>
+            </div>
+            {instruments
+              .filter((eq) => !eq.active)
+              .map((eq) => (
+                <Banner key={eq.id} tone="warn">
+                  {t("vitals.instrumentInactive", { name: eq.code })}
+                </Banner>
+              ))}
+          </div>
+
+          {scan && (
+            <ScanSheet
+              title={scan === "patient" ? t("scan.patient") : t("scan.equipment")}
+              onClose={() => setScan(null)}
+              onCode={async (raw) => {
+                const code = parseScannedCode(raw);
+                if (scan === "patient") {
+                  if (code.kind !== "patient") return t("scan.wrongKind");
+                  if (code.value !== patient.id) {
+                    // Show WHOSE wristband it is, so the mix-up is obvious.
+                    const other = (await listPatients(session, { includeDischarged: true })).find((p) => p.id === code.value);
+                    setWrongPatient(other ? `${other.givenName} ${other.familyName}` : code.value.slice(0, 8));
+                    setIdentity("unchecked");
+                    setScan(null);
+                    return;
+                  }
+                  setWrongPatient(null);
+                  setIdentity("ok");
+                  setScan(null);
+                  return;
+                }
+                // Instruments: an asset tag (SWEN:EQ:OXI-001) or the bare code.
+                const value = code.kind === "equipment" ? code.value : code.kind === "item" ? code.value : null;
+                if (!value) return t("scan.wrongKind");
+                const eq = await equipmentByCode(value);
+                if (!eq) return t("scan.unknown", { code: value });
+                setInstruments((list) => [...list.filter((x) => x.kind !== eq.kind), eq]);
+                setScan(null);
+              }}
+            />
+          )}
 
           <div className="ble-row">
             {bleSupported() ? (
@@ -192,7 +271,7 @@ export function RecordVitals({ patientId, correctId }: { patientId: string; corr
             </label>
           )}
 
-          <button className="btn btn-primary btn-lg" disabled={busy || !hasAny || blocking || (needsConfirm && !confirmed)}>
+          <button className="btn btn-primary btn-lg" disabled={busy || !hasAny || blocking || (needsConfirm && !confirmed) || !!wrongPatient}>
             {t("vitals.save")}
           </button>
         </form>

@@ -59,6 +59,18 @@ suite("field app UI flow (Kreyòl)", () => {
 
     // ---- Record vitals: live score goes HIGH ------------------------------------------
     await screen.findByText("Pran siy vital", { selector: "h1" });
+    const patientId = window.location.hash.split("/")[2]!;
+
+    // ---- Wristband check: a wrong wristband is caught, the right one confirms ----
+    fireEvent.click(screen.getByRole("button", { name: "Eskane braslè" }));
+    typeInto(await screen.findByLabelText("Oswa tape kòd la"), "SWEN:PT:00000000-0000-4000-8000-000000000001");
+    fireEvent.click(screen.getByRole("button", { name: "Konfime" }));
+    await screen.findByText(/SE PA BON PASYAN AN/);
+    expect((screen.getByRole("button", { name: "Anrejistre siy vital yo" }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(screen.getAllByRole("button", { name: "Eskane braslè" })[0]!);
+    typeInto(await screen.findByLabelText("Oswa tape kòd la"), `SWEN:PT:${patientId}`);
+    fireEvent.click(screen.getByRole("button", { name: "Konfime" }));
+    await screen.findByText(/Idantite pasyan an konfime/);
     typeInto(field(/Respirasyon/), "32");
     typeInto(field(/Batman kè/), "118");
     typeInto(field(/Tansyon sistolik/), "86");
@@ -78,6 +90,7 @@ suite("field app UI flow (Kreyòl)", () => {
 
     // ---- Patient view shows the score and the recorded action ---------------------------
     await screen.findByText(/Mwen rele doktè a —/, {}, { timeout: 5000 });
+    expect(screen.getByText(/✓ Braslè eskane/)).toBeTruthy();
     expect(screen.getByRole("heading", { name: "Rose Toussaint" })).toBeTruthy();
 
     // ---- Inventory: dispense 2 using FEFO ------------------------------------------------

@@ -260,3 +260,53 @@ export async function resetMewsConfig(_: FormState): Promise<FormState> {
   revalidatePath("/", "layout");
   return ok(t("dash.mewsSaved"));
 }
+
+// ---- Measuring equipment (traceability) ------------------------------------------
+
+const EquipmentForm = z.object({
+  code: z.string().trim().max(64).optional(),
+  name: z.string().trim().min(1).max(120),
+  kind: z.enum(["oximeter", "bp", "thermometer", "other"]),
+  serial: z.string().trim().max(120).optional(),
+});
+
+export async function createEquipment(_: FormState, form: FormData): Promise<FormState> {
+  const facility = await facilityOrThrow();
+  const { t } = await getI18n();
+  const parsed = EquipmentForm.safeParse(Object.fromEntries(form));
+  if (!parsed.success) return fail(t("dash.invalid", { problems: parsed.error.issues.map((i) => i.path.join(".")).join(", ") }));
+  const prefix = { oximeter: "OXI", bp: "TA", thermometer: "TEMP", other: "EQ" }[parsed.data.kind];
+  // Asset tag: given, or the next free number for this kind (OXI-001, OXI-002…).
+  let code = parsed.data.code?.toUpperCase();
+  if (!code) {
+    const count = await db().equipment.count({ where: { facilityId: facility.id, kind: parsed.data.kind } });
+    code = `${prefix}-${String(count + 1).padStart(3, "0")}`;
+  }
+  const clash = await db().equipment.findFirst({ where: { facilityId: facility.id, code }, select: { id: true } });
+  if (clash) return fail(t("dash.invalid", { problems: `${t("dash.code")} ${code}` }));
+  await withFacilityLock(db(), facility.id, (tx) =>
+    tx.equipment.create({
+      data: { id: randomUUID(), facilityId: facility.id, code, name: parsed.data.name, kind: parsed.data.kind, serial: parsed.data.serial || null, updatedAt: new Date() },
+    }),
+  );
+  revalidatePath("/admin");
+  return ok(`${t("dash.saved")} ${code}`);
+}
+
+export async function markEquipmentChecked(form: FormData): Promise<void> {
+  const facility = await facilityOrThrow();
+  const id = String(form.get("equipmentId") ?? "");
+  const now = new Date();
+  await withFacilityLock(db(), facility.id, (tx) => tx.equipment.update({ where: { id, facilityId: facility.id }, data: { lastCheckedAt: now, updatedAt: now } }));
+  revalidatePath("/admin");
+}
+
+export async function toggleEquipment(form: FormData): Promise<void> {
+  const facility = await facilityOrThrow();
+  const id = String(form.get("equipmentId") ?? "");
+  await withFacilityLock(db(), facility.id, async (tx) => {
+    const e = await tx.equipment.findFirstOrThrow({ where: { id, facilityId: facility.id }, select: { active: true } });
+    await tx.equipment.update({ where: { id }, data: { active: !e.active, updatedAt: new Date() } });
+  });
+  revalidatePath("/admin");
+}
