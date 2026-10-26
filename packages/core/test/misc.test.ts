@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { checkVitals, hasBlockingIssue } from "../src/plausibility";
 import { clockOffsetMs, incomingWins } from "../src/time";
-import { en, fr, ht, translate } from "../src/i18n";
+import { en, formatDate, fr, ht, translate } from "../src/i18n";
 import { describeMews } from "../src/labels";
 import { computeMews, DEFAULT_MEWS_CONFIG } from "../src/mews";
 import { createTranslator } from "../src/i18n";
@@ -49,6 +49,10 @@ describe("i18n", () => {
       expect(vars(ht[key]), `ht ${key}`).toBe(vars(en[key]));
       expect(vars(fr[key]), `fr ${key}`).toBe(vars(en[key]));
     }
+  });
+  it("writes expiry dates with Kreyòl month names", () => {
+    expect(formatDate("ht", "2028-04-28")).toBe("28 avril 2028");
+    expect(formatDate("ht", "2026-10-01")).toBe("1 oktòb 2026");
   });
   it("interpolates variables", () => {
     expect(translate("ht", "sync.pending", { n: 3 })).toBe("3 poko voye");

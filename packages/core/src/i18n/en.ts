@@ -214,6 +214,8 @@ export const en = {
   "dash.facility": "Facility",
   "dash.facilities": "Facilities",
   "dash.addFacility": "Add facility",
+  "dash.stat.high": "High risk",
+  "dash.stat.medium": "Medium risk",
   "dash.atRisk": "Patients at risk",
   "dash.noAtRisk": "No patients currently at medium or high risk.",
   "dash.unacknowledged": "No action recorded",

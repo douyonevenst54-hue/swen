@@ -216,6 +216,8 @@ export const fr: Record<MessageKey, string> = {
   "dash.facility": "Établissement",
   "dash.facilities": "Établissements",
   "dash.addFacility": "Ajouter un établissement",
+  "dash.stat.high": "Risque élevé",
+  "dash.stat.medium": "Risque moyen",
   "dash.atRisk": "Patients à risque",
   "dash.noAtRisk": "Aucun patient à risque moyen ou élevé actuellement.",
   "dash.unacknowledged": "Aucune action",

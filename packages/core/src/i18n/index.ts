@@ -49,4 +49,16 @@ export function relativeTime(locale: Locale, target: Date | string | number, now
   return rtf.format(signed, unit === "min" ? "minute" : unit === "h" ? "hour" : "day");
 }
 
+const KREYOL_MONTHS = ["janvye", "fevriye", "mas", "avril", "me", "jen", "jiyè", "out", "septanm", "oktòb", "novanm", "desanm"];
+
+/**
+ * A calendar date such as an expiry date ("2028-04-28" → "28 avril 2028").
+ * Browsers have no Kreyòl month names (they fall back to French), so they are written out here.
+ */
+export function formatDate(locale: Locale, value: Date | string): string {
+  const d = new Date(value);
+  if (locale === "ht") return `${d.getUTCDate()} ${KREYOL_MONTHS[d.getUTCMonth()]} ${d.getUTCFullYear()}`;
+  return new Intl.DateTimeFormat(INTL_LOCALE[locale], { dateStyle: "medium", timeZone: "UTC" }).format(d);
+}
+
 export { en, fr, ht };

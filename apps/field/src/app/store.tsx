@@ -1,4 +1,4 @@
-import { createTranslator, DEFAULT_LOCALE, INTL_LOCALE, relativeTime, resolveMewsConfig, type Locale, type MewsConfig, type Staff, type Translator } from "@swen/core";
+import { createTranslator, DEFAULT_LOCALE, formatDate, INTL_LOCALE, relativeTime, resolveMewsConfig, type Locale, type MewsConfig, type Staff, type Translator } from "@swen/core";
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { getMeta, setMeta, type DeviceRegistration } from "../lib/db";
 import { pendingCount } from "../lib/repo";
@@ -156,7 +156,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       locale,
       t,
       fmtTime: (iso) => new Intl.DateTimeFormat(intl, { dateStyle: "short", timeStyle: "short" }).format(new Date(iso)),
-      fmtDate: (iso) => new Intl.DateTimeFormat(intl, { dateStyle: "medium", timeZone: "UTC" }).format(new Date(iso)),
+      fmtDate: (iso) => formatDate(locale, iso),
       fmtRelative: (iso) => relativeTime(locale, iso),
       device,
       roster,

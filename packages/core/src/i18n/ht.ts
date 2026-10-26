@@ -220,6 +220,8 @@ export const ht: Record<MessageKey, string> = {
   "dash.facility": "Etablisman",
   "dash.facilities": "Etablisman yo",
   "dash.addFacility": "Ajoute etablisman",
+  "dash.stat.high": "Risk wo",
+  "dash.stat.medium": "Risk mwayen",
   "dash.atRisk": "Pasyan ki an danje",
   "dash.noAtRisk": "Pa gen pasyan ki nan risk mwayen oswa wo kounye a.",
   "dash.unacknowledged": "Pa gen aksyon",

@@ -48,8 +48,8 @@ export default async function Overview() {
 
       <div className="stats">
         <Stat label={t("dash.patients")} value={rows.length} />
-        <Stat label={t("vitals.level.high")} value={high.length} tone={high.length ? "high" : "ok"} />
-        <Stat label={t("vitals.level.medium")} value={atRisk.length - high.length} tone={atRisk.length - high.length ? "medium" : "ok"} />
+        <Stat label={t("dash.stat.high")} value={high.length} tone={high.length ? "high" : "ok"} />
+        <Stat label={t("dash.stat.medium")} value={atRisk.length - high.length} tone={atRisk.length - high.length ? "medium" : "ok"} />
         <Stat label={t("dash.unacknowledged")} value={unacked.length} tone={unacked.length ? "high" : "ok"} />
         <Stat label={t("patients.due")} value={overdue.length} tone={overdue.length ? "medium" : "ok"} />
         <Stat label={t("inventory.alerts")} value={inv.alerts.length} tone={inv.alerts.length ? "medium" : "ok"} />
