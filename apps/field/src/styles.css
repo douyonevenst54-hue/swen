@@ -20,6 +20,8 @@
   --amber-soft: #fff3dc;
   --green: #1c7745;
   --green-soft: #e3f3ea;
+  --orange: #d9580d;
+  --yellow: #f2c418;
   --radius-sm: 8px;
   --radius: 14px;
   --tap: 52px;
@@ -108,7 +110,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
 
 .bottomnav {
   position: fixed; inset: auto 0 0 0; z-index: 10;
-  display: grid; grid-template-columns: repeat(4, 1fr);
+  display: grid; grid-template-columns: repeat(5, 1fr);
   background: var(--surface); border-top: 1px solid var(--line);
   padding-bottom: env(safe-area-inset-bottom);
 }
@@ -345,3 +347,59 @@ input[type="search"] { -webkit-appearance: none; appearance: none; }
 .instruments { display: grid; gap: 6px; }
 .trace-line { margin: 0; }
 .row-between { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+
+/* ---- Front desk, queue and triage ---------------------------------------- */
+.desk { gap: 10px; }
+.desk-search { display: grid; grid-template-columns: 1fr 7.5rem auto; gap: 8px; }
+@media (max-width: 560px) {
+  .desk-search { grid-template-columns: 1fr 5.5rem; }
+  .desk-search .btn { grid-column: 1 / -1; }
+  .result-list li { grid-template-columns: 1fr; }
+  .result-list li > .btn, .result-list li > .tag { justify-self: start; }
+}
+.result-list, .queue-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.result-list li {
+  display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: center;
+  background: var(--wall); border-radius: var(--radius-sm); padding: 10px 12px;
+}
+.result-main { display: grid; gap: 2px; color: inherit; text-decoration: none; min-width: 0; }
+.result-main small { color: var(--muted); }
+.result-main .reasons { color: var(--blue); font-weight: 700; }
+
+.queue-group { display: grid; gap: 8px; }
+.queue-group h2 { font-size: 1rem; margin: 8px 0 0; }
+.queue-row { background: var(--surface); border-radius: var(--radius); border-left: 6px solid var(--line); padding: 10px 12px; display: grid; gap: 8px; }
+.queue-row.tri-red { border-left-color: var(--red); }
+.queue-row.tri-orange { border-left-color: var(--orange); }
+.queue-row.tri-yellow { border-left-color: var(--yellow); }
+.queue-row.tri-green { border-left-color: var(--green); }
+.queue-main { display: grid; grid-template-columns: auto 1fr auto auto; gap: 10px; align-items: center; color: inherit; text-decoration: none; }
+.queue-main small { display: block; color: var(--muted); }
+.queue-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+
+.tri-chip { display: inline-grid; place-items: center; min-width: 64px; height: 32px; padding: 0 8px; border-radius: 8px; font-weight: 700; font-size: 0.8rem; }
+.tri-chip.tri-none { background: var(--wall); color: var(--muted); border: 2px dashed var(--line); }
+.tri-chip.tri-red, .tri-option.tri-red.on { background: var(--red); color: #fff; }
+.tri-chip.tri-orange, .tri-option.tri-orange.on { background: var(--orange); color: #fff; }
+.tri-chip.tri-yellow, .tri-option.tri-yellow.on { background: var(--yellow); color: #241c00; }
+.tri-chip.tri-green, .tri-option.tri-green.on { background: var(--green); color: #fff; }
+
+.triage-picker { display: grid; gap: 8px; }
+.tri-option {
+  min-height: var(--tap); text-align: left; padding: 10px 14px; border-radius: var(--radius-sm);
+  border: 3px solid; background: var(--surface); color: var(--ink); font: inherit; font-weight: 700; cursor: pointer;
+}
+.tri-option.tri-red { border-color: var(--red); }
+.tri-option.tri-orange { border-color: var(--orange); }
+.tri-option.tri-yellow { border-color: var(--yellow); }
+.tri-option.tri-green { border-color: var(--green); }
+
+.form-section { font-size: 1.05rem; margin: 12px 0 0; padding-top: 8px; border-top: 1px solid var(--line); }
+.form-section:first-child { border-top: 0; margin-top: 0; padding-top: 0; }
+.subgroup { border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 8px 12px 12px; margin: 0; }
+.subgroup legend { padding: 0 6px; font-weight: 700; font-size: 0.9rem; }
+.year-input { text-align: center; }
+
+.identity-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 8px; margin: 0; }
+.identity-grid dt { font-size: 0.75rem; color: var(--muted); }
+.identity-grid dd { margin: 0; }

@@ -20,6 +20,7 @@ const STAFF = [
   { name: "Enfimyè Demo", role: "nurse" as const, pin: "111111" },
   { name: "Doktè Demo", role: "doctor" as const, pin: "222222" },
   { name: "Famasi Demo", role: "pharmacy" as const, pin: "333333" },
+  { name: "Resepsyon Demo", role: "reception" as const, pin: "444444" },
 ];
 
 // Code, Kreyòl, French, unit, category, minimum

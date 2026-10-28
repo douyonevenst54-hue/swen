@@ -6,7 +6,7 @@
  * (needs a person to look at it; see Settings).
  */
 import Dexie, { type EntityTable } from "dexie";
-import type { Equipment, Escalation, Item, Observation, Patient, StockMovement } from "@swen/core";
+import type { Equipment, Escalation, Item, Observation, Patient, StockMovement, Visit } from "@swen/core";
 
 export type Dirty = 0 | 1 | 2;
 
@@ -16,7 +16,28 @@ export interface Sealed {
 }
 
 /** Patient identity fields are encrypted at rest; only routing fields stay readable. */
-export type PatientPrivate = Pick<Patient, "givenName" | "familyName" | "mrn" | "notes" | "sex" | "birthYear" | "isPregnant">;
+export type PatientPrivate = Pick<
+  Patient,
+  | "givenName"
+  | "familyName"
+  | "otherNames"
+  | "mrn"
+  | "notes"
+  | "sex"
+  | "birthYear"
+  | "birthDate"
+  | "birthDatePrecision"
+  | "isPregnant"
+  | "phone"
+  | "motherName"
+  | "commune"
+  | "address"
+  | "nationalId"
+  | "emergencyName"
+  | "emergencyRelation"
+  | "emergencyPhone"
+  | "number"
+>;
 
 export interface PatientRow {
   id: string;
@@ -31,6 +52,7 @@ export interface PatientRow {
 }
 
 export type ObservationRow = Observation & { dirty: Dirty };
+export type VisitRow = Visit & { dirty: Dirty };
 export type EscalationRow = Escalation & { dirty: Dirty };
 export type ItemRow = Item & { dirty: Dirty };
 export type MovementRow = StockMovement & { dirty: Dirty };
@@ -38,7 +60,7 @@ export type EquipmentRow = Equipment;
 
 export interface RejectedRow {
   id: string;
-  table: "patients" | "observations" | "escalations" | "items" | "movements";
+  table: "patients" | "visits" | "observations" | "escalations" | "items" | "movements";
   reason: string;
   at: string;
 }
@@ -57,6 +79,7 @@ export class SwenDb extends Dexie {
   movements!: EntityTable<MovementRow, "id">;
   rejected!: EntityTable<RejectedRow, "id">;
   equipment!: EntityTable<EquipmentRow, "id">;
+  visits!: EntityTable<VisitRow, "id">;
 
   constructor(name = "swen") {
     super(name);
@@ -71,6 +94,8 @@ export class SwenDb extends Dexie {
     });
     // v2: measuring instruments, for traceability.
     this.version(2).stores({ equipment: "id, &code" });
+    // v3: visits (appointments, queue, stays).
+    this.version(3).stores({ visits: "id, patientId, status, arrivedAt, dirty, updatedAt" });
   }
 }
 

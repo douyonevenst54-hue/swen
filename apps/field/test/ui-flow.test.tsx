@@ -111,11 +111,84 @@ suite("field app UI flow (Kreyòl)", () => {
     await screen.findByText("Anrejistre", { selector: ".banner div" });
     await waitFor(() => expect(Number(document.querySelector(".stock-number")!.textContent)).toBe(before - 2));
 
+    // ---- Front desk: search, register, check in -------------------------------------------
+    act(() => {
+      window.location.hash = "#/queue";
+    });
+    typeInto(await screen.findByLabelText("Chèche"), "Jan Batis Pyè");
+    fireEvent.click(await screen.findByRole("button", { name: "+ Anrejistre yon nouvo pasyan" }));
+    await screen.findByRole("button", { name: "Anrejistre epi mete l nan liy lan" });
+    expect((field(/Prenon/) as HTMLInputElement).value).toBe("Jan");
+    expect((field(/Non fanmi/) as HTMLInputElement).value).toBe("Batis Pyè");
+    fireEvent.click(screen.getByRole("radio", { name: "Gason" }));
+    typeInto(field(/Ane nesans/), "1975");
+    typeInto(field(/Non manman/), "Rose");
+    typeInto(field(/Komin/), "Mirebalais");
+    fireEvent.click(screen.getByRole("button", { name: "Anrejistre epi mete l nan liy lan" }));
+    // A rerun against the same server finds the earlier record: keep this one separate.
+    const firstSheet = await screen.findByRole("dialog");
+    if (within(firstSheet).queryByText("Èske se menm moun nan?")) fireEvent.click(within(firstSheet).getByRole("button", { name: /Se pa menm moun nan/ }));
+
+    // Check-in sheet opens for the new patient.
+    const checkin = await screen.findByRole("dialog", { name: "Mete nan liy atant" }, { timeout: 5000 });
+    typeInto(within(checkin).getByLabelText(/Poukisa li vini/), "Lafyèv 3 jou");
+    fireEvent.click(within(checkin).getByRole("button", { name: "Mete l nan liy lan" }));
+    await screen.findByRole("heading", { name: /Ap tann triyaj/ });
+    const waitingRow = (await screen.findByText("Jan Batis Pyè")).closest("li")!;
+    expect(within(waitingRow).getByText(/Lafyèv 3 jou/)).toBeTruthy();
+
+    // ---- Triage: orange, then normal vitals, back to the queue --------------------------------
+    fireEvent.click(within(waitingRow).getByRole("button", { name: "Fè triyaj" }));
+    fireEvent.click(await screen.findByRole("radio", { name: /Oranj/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Anrejistre epi pran siy vital" }));
+    await screen.findByText("Pran siy vital", { selector: "h1" });
+    typeInto(field(/Respirasyon/), "16");
+    typeInto(field(/Batman kè/), "80");
+    typeInto(field(/Tansyon sistolik/), "120");
+    typeInto(field(/Tansyon dyastolik/), "80");
+    typeInto(field(/Tanperati/), "37");
+    typeInto(field(/Oksijèn nan san/), "98");
+    fireEvent.click(screen.getByRole("radio", { name: /Reveye/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Anrejistre siy vital yo" }));
+    await screen.findByRole("heading", { name: /Ap tann doktè/ }, { timeout: 5000 });
+    const triagedRow = screen.getByText("Jan Batis Pyè").closest("li")!;
+    expect(within(triagedRow).getByText("Oranj")).toBeTruthy();
+
+    // ---- Doctor calls in, then done -------------------------------------------------------
+    fireEvent.click(within(triagedRow).getByRole("button", { name: "Rele l antre" }));
+    const consultRow = (await screen.findByRole("heading", { name: /Avèk doktè a/ })).parentElement!;
+    fireEvent.click(within(consultRow).getByRole("button", { name: "Fini" }));
+    await screen.findByRole("button", { name: /Fini jodi a/ });
+
+    // ---- The French spelling finds the same person ------------------------------------------
+    typeInto(screen.getByLabelText("Chèche"), "Jean Baptiste Pierre");
+    const found = (await screen.findAllByText(/Jan Batis Pyè/, { selector: ".result-main strong" }))[0]!;
+    expect(found.closest("li")!.textContent).toMatch(/Mirebalais/);
+
+    // ---- Registering him again offers the existing record --------------------------------------
+    act(() => {
+      window.location.hash = "#/register?name=Jean%20Baptiste%20Pierre&year=1975";
+    });
+    await screen.findByRole("button", { name: "Anrejistre epi mete l nan liy lan" });
+    fireEvent.click(screen.getByRole("radio", { name: "Gason" }));
+    fireEvent.click(screen.getByRole("button", { name: "Anrejistre epi mete l nan liy lan" }));
+    const dup = await screen.findByRole("dialog", { name: "Èske se menm moun nan?" });
+    expect(within(dup).getAllByText(/menm non/).length).toBeGreaterThan(0);
+    fireEvent.click(within(dup).getAllByRole("button", { name: /Se menm moun nan/ })[0]!);
+    const again = await screen.findByRole("dialog", { name: "Mete nan liy atant" });
+    fireEvent.click(within(again).getByRole("button", { name: "Anile" }));
+
     // ---- Sync: nothing left pending --------------------------------------------------------
     act(() => {
       window.location.hash = "#/settings";
     });
     fireEvent.click(await screen.findByRole("button", { name: "Senkronize kounye a" }));
     await waitFor(() => expect(screen.getAllByText("Tout bagay anrejistre sou sèvè a").length).toBeGreaterThan(0), { timeout: 15_000 });
+
+    // The server issued a patient number, and it came back to the tablet.
+    act(() => {
+      window.location.hash = `#/patient/${patientId}`;
+    });
+    await waitFor(() => expect(document.querySelector(".topbar-title p")?.textContent).toMatch(/^[A-Z0-9]+-\d{6}/), { timeout: 5000 });
   });
 });

@@ -34,7 +34,8 @@ export function Ward() {
   useEffect(() => {
     let alive = true;
     (async () => {
-      const patients = await listPatients(session, { includeDischarged: showDischarged });
+      // Only patients on a ward; outpatients are on the queue screen.
+      const patients = (await listPatients(session, { includeDischarged: showDischarged })).filter((p) => p.ward);
       const since = new Date(Date.now() - 14 * 86_400_000).toISOString();
       const latest = latestByPatient(await recentObservations(since));
       const acked = await acknowledgedObservationIds([...latest.values()].map((o) => o.id));

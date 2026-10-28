@@ -4,7 +4,8 @@ import { Banner, Empty, MewsBadge, MewsPanel, TopBar } from "../app/components";
 import { go } from "../app/router";
 import { useApp, useSession } from "../app/store";
 import type { EscalationRow, ObservationRow } from "../lib/db";
-import { escalationsFor, getPatient, listEquipment, observationsFor, scoreFor, setDischarged, type LocalPatient } from "../lib/repo";
+import type { VisitRow } from "../lib/db";
+import { escalationsFor, getPatient, listEquipment, observationsFor, openVisitFor, scoreFor, setDischarged, type LocalPatient } from "../lib/repo";
 
 const v = (n: number | null | undefined, digits = 0) => (n == null ? "—" : n.toFixed(digits));
 
@@ -15,13 +16,15 @@ export function PatientView({ id }: { id: string }) {
   const [obs, setObs] = useState<ObservationRow[]>([]);
   const [esc, setEsc] = useState<EscalationRow[]>([]);
   const [equipment, setEquipment] = useState<Map<string, { code: string }>>(new Map());
+  const [visit, setVisit] = useState<VisitRow | undefined>(undefined);
 
   useEffect(() => {
-    void Promise.all([getPatient(session, id), observationsFor(id), escalationsFor(id), listEquipment()]).then(([p, o, e, eq]) => {
+    void Promise.all([getPatient(session, id), observationsFor(id), escalationsFor(id), listEquipment(), openVisitFor(id)]).then(([p, o, e, eq, v]) => {
       setPatient(p);
       setObs(o);
       setEsc(e);
       setEquipment(new Map(eq.map((x) => [x.id, x])));
+      setVisit(v);
     });
   }, [id, session, dataVersion]);
 
@@ -42,7 +45,7 @@ export function PatientView({ id }: { id: string }) {
     );
 
   const age = ageInYears(patient.birthYear);
-  const sub = [patient.ward, patient.bed ? `${t("patients.bed")} ${patient.bed}` : null, age != null ? t("patients.age", { n: age }) : null, t(`patients.sex.${patient.sex}` as MessageKey), patient.isPregnant ? t("patients.pregnant") : null]
+  const sub = [patient.number, patient.ward || null, patient.bed ? `${t("patients.bed")} ${patient.bed}` : null, age != null ? t("patients.age", { n: age }) : null, t(`patients.sex.${patient.sex}` as MessageKey), patient.isPregnant ? t("patients.pregnant") : null]
     .filter(Boolean)
     .join(" · ");
 
@@ -60,6 +63,28 @@ export function PatientView({ id }: { id: string }) {
       />
       <main className="content">
         {patient.dischargedAt && <Banner tone="info">{t("patients.discharged")} · {fmtTime(patient.dischargedAt)}</Banner>}
+        {visit ? (
+          <Banner
+            tone="info"
+            action={
+              visit.status === "waiting" ? (
+                <button className="btn btn-primary" onClick={() => go(`/visit/${visit.id}/triage`)}>
+                  {t("queue.triage")}
+                </button>
+              ) : undefined
+            }
+          >
+            {t(`visit.status.${visit.status}` as MessageKey)} · {visit.service}
+            {visit.chiefComplaint ? ` · ${visit.chiefComplaint}` : ""}
+          </Banner>
+        ) : (
+          !patient.ward && (
+            <button className="btn btn-quiet" onClick={() => go(`/queue?checkin=${patient.id}`)}>
+              {t("checkin.title")}
+            </button>
+          )
+        )}
+        <IdentityPanel p={patient} />
 
         {latestResult && latest ? (
           <>
@@ -160,6 +185,32 @@ export function PatientView({ id }: { id: string }) {
         </section>
       </main>
     </>
+  );
+}
+
+function IdentityPanel({ p }: { p: LocalPatient }) {
+  const { t } = useApp();
+  const rows: [MessageKey, string | null | undefined][] = [
+    ["patients.otherNames", p.otherNames],
+    ["patients.phone", p.phone],
+    ["patients.commune", [p.commune, p.address].filter(Boolean).join(" · ")],
+    ["patients.motherName", p.motherName],
+    ["patients.nationalId", p.nationalId],
+    ["patients.emergency", [p.emergencyName, p.emergencyRelation, p.emergencyPhone].filter(Boolean).join(" · ")],
+  ];
+  const shown = rows.filter(([, v]) => v);
+  if (!shown.length) return null;
+  return (
+    <section className="panel">
+      <dl className="identity-grid">
+        {shown.map(([k, v]) => (
+          <div key={k}>
+            <dt>{t(k)}</dt>
+            <dd>{v}</dd>
+          </div>
+        ))}
+      </dl>
+    </section>
   );
 }
 

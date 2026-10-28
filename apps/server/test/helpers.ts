@@ -70,4 +70,4 @@ export function observation(patientId: string, recordedBy: string, overrides: Re
   };
 }
 
-export const emptyPush = () => ({ patients: [], observations: [], escalations: [], items: [], movements: [] });
+export const emptyPush = () => ({ patients: [], visits: [], observations: [], escalations: [], items: [], movements: [] });

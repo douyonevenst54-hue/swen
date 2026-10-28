@@ -13,9 +13,19 @@ import {
   type Observation,
   type Patient,
   type StockMovement,
+  type Visit,
+  type VisitKind,
+  type VisitStatus,
+  type TriageColor,
+  canMove,
+  localDay,
+  OPEN_STATUSES,
+  searchPeople,
+  findLikelyDuplicates,
+  type IdentityFields,
 } from "@swen/core";
 import { open, seal } from "./crypto";
-import { getMeta, localDb, type MovementRow, type ObservationRow, type PatientPrivate, type PatientRow, type SwenDb } from "./db";
+import { getMeta, localDb, type MovementRow, type ObservationRow, type PatientPrivate, type PatientRow, type SwenDb, type VisitRow } from "./db";
 import type { Session } from "./session";
 
 export type LocalPatient = Patient & { dirty: 0 | 1 | 2 };
@@ -44,11 +54,23 @@ export async function sealPatient(key: CryptoKey, p: Patient, dirty: 0 | 1): Pro
   const priv: PatientPrivate = {
     givenName: p.givenName,
     familyName: p.familyName,
+    otherNames: p.otherNames ?? null,
     mrn: p.mrn ?? null,
     notes: p.notes ?? null,
     sex: p.sex,
     birthYear: p.birthYear ?? null,
+    birthDate: p.birthDate ?? null,
+    birthDatePrecision: p.birthDatePrecision ?? null,
     isPregnant: p.isPregnant,
+    phone: p.phone ?? null,
+    motherName: p.motherName ?? null,
+    commune: p.commune ?? null,
+    address: p.address ?? null,
+    nationalId: p.nationalId ?? null,
+    emergencyName: p.emergencyName ?? null,
+    emergencyRelation: p.emergencyRelation ?? null,
+    emergencyPhone: p.emergencyPhone ?? null,
+    number: p.number ?? null,
   };
   return {
     id: p.id,
@@ -89,12 +111,25 @@ export async function getPatient(session: Session, id: string, db: SwenDb = loca
   return row ? openPatient(session.key, row) : null;
 }
 
+const IDENTITY_TEXT = [
+  "otherNames",
+  "phone",
+  "motherName",
+  "commune",
+  "address",
+  "nationalId",
+  "emergencyName",
+  "emergencyRelation",
+  "emergencyPhone",
+] as const;
+
 export type PatientInput = Pick<Patient, "ward" | "givenName" | "familyName" | "sex"> &
-  Partial<Pick<Patient, "bed" | "mrn" | "birthYear" | "isPregnant" | "notes">>;
+  Partial<Pick<Patient, "bed" | "mrn" | "birthYear" | "birthDate" | "birthDatePrecision" | "isPregnant" | "notes" | (typeof IDENTITY_TEXT)[number]>>;
 
 export async function savePatient(session: Session, input: PatientInput & { id?: string }, db: SwenDb = localDb()): Promise<Patient> {
   const existing = input.id ? await getPatient(session, input.id, db) : null;
   const now = await editTime(existing?.updatedAt, db);
+  const text = Object.fromEntries(IDENTITY_TEXT.map((k) => [k, input[k]?.trim() || null])) as Pick<Patient, (typeof IDENTITY_TEXT)[number]>;
   const patient: Patient = {
     id: existing?.id ?? crypto.randomUUID(),
     ward: input.ward.trim(),
@@ -104,7 +139,12 @@ export async function savePatient(session: Session, input: PatientInput & { id?:
     familyName: input.familyName.trim(),
     sex: input.sex,
     birthYear: input.birthYear ?? null,
+    birthDate: input.birthDate || null,
+    birthDatePrecision: input.birthDatePrecision ?? (input.birthYear ? "year" : null),
     isPregnant: input.isPregnant ?? false,
+    ...text,
+    // The number is issued by the server; keep the one we have.
+    number: existing?.number ?? null,
     notes: input.notes?.trim() || null,
     dischargedAt: existing?.dischargedAt ?? null,
     createdAt: existing?.createdAt ?? now,
@@ -124,6 +164,114 @@ export async function setDischarged(session: Session, id: string, discharged: bo
   await db.patients.put(await sealPatient(session.key, { ...rest, dischargedAt: discharged ? now : null, updatedAt: now, updatedBy: session.staff.id }, 1));
 }
 
+/** Search everyone registered on this tablet by name (sound-alike), phone or ID. */
+export async function searchPatients(session: Session, query: { text: string; birthYear?: number | null }, db: SwenDb = localDb()) {
+  if (query.text.trim().length < 2) return [];
+  const all = await listPatients(session, { includeDischarged: true }, db);
+  return searchPeople(all, query, 30);
+}
+
+/** Existing records that may be the same person as a new registration. */
+export async function likelyDuplicates(session: Session, candidate: IdentityFields, excludeId?: string, db: SwenDb = localDb()) {
+  const all = (await listPatients(session, { includeDischarged: true }, db)).filter((p) => p.id !== excludeId);
+  return findLikelyDuplicates(candidate, all);
+}
+
+// ---- Visits ---------------------------------------------------------------------
+
+export interface CheckInInput {
+  kind: VisitKind;
+  service: string;
+  chiefComplaint?: string | null;
+}
+
+/** Put a patient in today's queue. Returns the open visit if they are already in it. */
+export async function checkIn(session: Session, patientId: string, input: CheckInInput, db: SwenDb = localDb()): Promise<Visit> {
+  const open = await openVisitFor(patientId, db);
+  if (open) return open;
+  const now = await nowIso(db);
+  const v: Visit = {
+    id: crypto.randomUUID(),
+    patientId,
+    kind: input.kind,
+    service: input.service.trim(),
+    status: "waiting",
+    scheduledFor: null,
+    arrivedAt: now,
+    endedAt: null,
+    triageColor: null,
+    chiefComplaint: input.chiefComplaint?.trim() || null,
+    assignedTo: null,
+    note: null,
+    createdAt: now,
+    createdBy: session.staff.id,
+    updatedAt: now,
+    updatedBy: session.staff.id,
+  };
+  await db.visits.put({ ...v, dirty: 1 });
+  return v;
+}
+
+export async function getVisit(id: string, db: SwenDb = localDb()): Promise<VisitRow | undefined> {
+  return db.visits.get(id);
+}
+
+/** Change a visit's status (and optionally triage details). Refuses impossible moves. */
+export async function updateVisit(
+  session: Session,
+  id: string,
+  change: { status?: VisitStatus; triageColor?: TriageColor | null; chiefComplaint?: string | null },
+  db: SwenDb = localDb(),
+): Promise<Visit | null> {
+  const row = await db.visits.get(id);
+  if (!row) return null;
+  if (change.status && change.status !== row.status && !canMove(row.status, change.status)) return null;
+  const now = await editTime(row.updatedAt, db);
+  const { dirty: _d, ...v } = row;
+  void _d;
+  const status = change.status ?? v.status;
+  const next: Visit = {
+    ...v,
+    status,
+    triageColor: change.triageColor !== undefined ? change.triageColor : v.triageColor,
+    chiefComplaint: change.chiefComplaint !== undefined ? change.chiefComplaint?.trim() || null : v.chiefComplaint,
+    endedAt: status === "done" || status === "left" ? (v.endedAt ?? now) : null,
+    assignedTo: status === "consulting" ? session.staff.id : v.assignedTo,
+    updatedAt: now,
+    updatedBy: session.staff.id,
+  };
+  await db.visits.put({ ...next, dirty: 1 });
+  return next;
+}
+
+/** Visits that belong to a calendar day (Haiti time). */
+export async function visitsOn(day: string, db: SwenDb = localDb()): Promise<VisitRow[]> {
+  // A little wider than one day in UTC, then filtered on the local day.
+  const from = new Date(Date.parse(`${day}T00:00:00Z`) - 86_400_000).toISOString();
+  const rows = await db.visits.where("arrivedAt").aboveOrEqual(from).toArray();
+  return rows.filter((v) => v.arrivedAt && localDay(v.arrivedAt) === day);
+}
+
+export async function openVisitFor(patientId: string, db: SwenDb = localDb()): Promise<VisitRow | undefined> {
+  const rows = await db.visits.where("patientId").equals(patientId).toArray();
+  return rows.filter((v) => OPEN_STATUSES.has(v.status)).sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
+}
+
+export async function visitsFor(patientId: string, db: SwenDb = localDb()): Promise<VisitRow[]> {
+  const rows = await db.visits.where("patientId").equals(patientId).toArray();
+  return rows.sort((a, b) => (b.arrivedAt ?? b.createdAt).localeCompare(a.arrivedAt ?? a.createdAt));
+}
+
+/** Most recent arrival per patient, for search results. */
+export async function lastVisitByPatient(db: SwenDb = localDb()): Promise<Map<string, string>> {
+  const out = new Map<string, string>();
+  for (const v of await db.visits.toArray()) {
+    const at = v.arrivedAt ?? v.createdAt;
+    if ((out.get(v.patientId) ?? "") < at) out.set(v.patientId, at);
+  }
+  return out;
+}
+
 // ---- Observations ---------------------------------------------------------------
 
 export interface VitalsDraft {
@@ -140,6 +288,8 @@ export interface VitalsDraft {
   patientScanned?: boolean;
   /** Instrument per vital sign. */
   equipment?: Observation["equipment"];
+  /** Visit these vitals belong to (triage). */
+  visitId?: string | null;
 }
 
 export function scoreFor(patient: Pick<Patient, "birthYear" | "isPregnant">, v: VitalsDraft, cfg: MewsConfig, at: Date = new Date()): MewsResult {
@@ -176,6 +326,7 @@ export async function addObservation(
     note: v.note?.trim() || null,
     patientScanned: v.patientScanned ?? false,
     equipment: v.equipment ?? {},
+    visitId: v.visitId ?? opts.supersedes?.visitId ?? null,
   };
   await db.observations.put({ ...observation, dirty: 1 });
   return { observation, mews };
@@ -260,6 +411,7 @@ export async function addMovements(session: Session, inputs: MovementInput[], db
 export async function pendingCount(db: SwenDb = localDb()): Promise<number> {
   const counts = await Promise.all([
     db.patients.where("dirty").equals(1).count(),
+    db.visits.where("dirty").equals(1).count(),
     db.observations.where("dirty").equals(1).count(),
     db.escalations.where("dirty").equals(1).count(),
     db.items.where("dirty").equals(1).count(),

@@ -109,7 +109,7 @@ suite("push and pull", () => {
     const item = { id: itemId, code: "GLOVE", nameHt: "Gan", nameFr: "Gants", unit: "bwat", category: null, minStock: 2, active: true, updatedAt: now() };
     const m = { id: randomUUID(), itemId, type: "receive" as const, quantity: 10, lot: "A", expiryDate: "2027-12-31", location: null, patientId: null, at: now(), by: nurse.id, note: null };
 
-    const res = await pushChanges(db, ctx, { patients: [p], observations: [o], escalations: [e], items: [item], movements: [m] });
+    const res = await pushChanges(db, ctx, { patients: [p], visits: [], observations: [o], escalations: [e], items: [item], movements: [m] });
     expect(res.rejected).toEqual([]);
     expect(res.accepted.sort()).toEqual([p.id, o.id, e.id, itemId, m.id].sort());
 
@@ -119,7 +119,7 @@ suite("push and pull", () => {
     expect(stored.deviceMewsTotal).toBe(0);
 
     // Pushing the same batch again is harmless (idempotent).
-    const again = await pushChanges(db, ctx, { patients: [p], observations: [o], escalations: [e], items: [item], movements: [m] });
+    const again = await pushChanges(db, ctx, { patients: [p], visits: [], observations: [o], escalations: [e], items: [item], movements: [m] });
     expect(again.rejected).toEqual([]);
     expect(await db.observation.count({ where: { id: o.id } })).toBe(1);
     expect(await db.stockMovement.count({ where: { itemId } })).toBe(1);
@@ -296,5 +296,86 @@ suite("cabinet door sensor", () => {
     const events = await db.cabinetEvent.findMany({ where: { cabinetId: id }, orderBy: { at: "asc" } });
     expect(events.map((e) => e.type)).toEqual(["door_open", "door_close"]);
     await expect(recordCabinetEvents(db, "wrong", { events: [{ type: "heartbeat", agoMs: 0 }] })).rejects.toBeInstanceOf(HttpError);
+  });
+});
+
+suite("registration and visits", () => {
+  let db: Db;
+  beforeAll(() => {
+    db = testDb();
+  });
+  afterAll(() => db.$disconnect());
+
+  const visit = (patientId: string, by: string, over: Record<string, unknown> = {}) => {
+    const t = now();
+    return {
+      id: randomUUID(), patientId, kind: "outpatient" as const, service: "Konsiltasyon jeneral", status: "waiting" as const,
+      scheduledFor: null, arrivedAt: t, endedAt: null, triageColor: null, chiefComplaint: "Lafyèv", assignedTo: null, note: null,
+      createdAt: t, createdBy: by, updatedAt: t, updatedBy: by, ...over,
+    };
+  };
+
+  it("stores full identity and issues patient numbers in the facility's series, never twice", async () => {
+    const { facility, nurse } = await makeFacility(db, "Hôpital Universitaire de Lamesine");
+    const ctx = { facilityId: facility.id, deviceId: randomUUID() };
+    const a = patient(nurse.id, { ward: "", otherNames: "Marie Joseph", phone: "+509 3712 4455", motherName: "Rose", commune: "Mirebalais", birthDatePrecision: "year" });
+    const b = patient(nurse.id, { ward: "" });
+    // Two tablets push at the same time.
+    await Promise.all([pushChanges(db, ctx, { ...emptyPush(), patients: [a] }), pushChanges(db, { ...ctx, deviceId: randomUUID() }, { ...emptyPush(), patients: [b] })]);
+    const rows = await db.patient.findMany({ where: { facilityId: facility.id }, orderBy: { number: "asc" } });
+    expect(rows.map((r) => r.number)).toEqual(["HUL-000001", "HUL-000002"]);
+    expect(rows.find((r) => r.id === a.id)).toMatchObject({ otherNames: "Marie Joseph", phone: "+509 3712 4455", commune: "Mirebalais" });
+
+    // A device edit never changes or clears the number.
+    const numberA = rows.find((r) => r.id === a.id)!.number;
+    await pushChanges(db, ctx, { ...emptyPush(), patients: [{ ...a, number: "HACKED", bed: "3", updatedAt: new Date(Date.now() + 1000).toISOString() }] });
+    expect((await db.patient.findUniqueOrThrow({ where: { id: a.id } })).number).toBe(numberA);
+
+    // The number reaches every device.
+    const pulled = await pullChanges(db, facility.id, null);
+    expect(pulled.changes.patients.find((p) => p.id === a.id)?.number).toBe(numberA);
+  });
+
+  it("syncs visits with last-write-wins and links triage vitals to the visit", async () => {
+    const { facility, nurse } = await makeFacility(db);
+    const ctx = { facilityId: facility.id, deviceId: randomUUID() };
+    const p = patient(nurse.id, { ward: "" });
+    const v = visit(p.id, nurse.id);
+    // Visit arrives before its patient: retry later.
+    const early = await pushChanges(db, ctx, { ...emptyPush(), visits: [v] });
+    expect(early.rejected).toEqual([{ id: v.id, reason: "unknown_patient", retryable: true }]);
+
+    const o = { ...observation(p.id, nurse.id), visitId: v.id };
+    const res = await pushChanges(db, ctx, { ...emptyPush(), patients: [p], visits: [v], observations: [o] });
+    expect(res.rejected).toEqual([]);
+    expect((await db.observation.findUniqueOrThrow({ where: { id: o.id } })).visitId).toBe(v.id);
+
+    // Triage on one tablet, an older edit from another tablet loses.
+    const later = new Date(Date.now() + 2000).toISOString();
+    await pushChanges(db, ctx, { ...emptyPush(), visits: [{ ...v, status: "triaged", triageColor: "orange", updatedAt: later }] });
+    await pushChanges(db, ctx, { ...emptyPush(), visits: [{ ...v, status: "left", updatedAt: v.updatedAt }] });
+    expect(await db.visit.findUniqueOrThrow({ where: { id: v.id } })).toMatchObject({ status: "triaged", triageColor: "orange" });
+
+    const pulled = await pullChanges(db, facility.id, null);
+    expect(pulled.changes.visits).toHaveLength(1);
+    expect(pulled.changes.visits[0]).toMatchObject({ id: v.id, status: "triaged", chiefComplaint: "Lafyèv" });
+    expect(pulled.changes.observations[0]?.visitId).toBe(v.id);
+  });
+
+  it("refuses a visit for another facility's patient and drops a foreign visit link", async () => {
+    const one = await makeFacility(db);
+    const two = await makeFacility(db);
+    const p = patient(one.nurse.id, { ward: "" });
+    await pushChanges(db, { facilityId: one.facility.id, deviceId: randomUUID() }, { ...emptyPush(), patients: [p] });
+    const v = visit(p.id, two.nurse.id);
+    const res = await pushChanges(db, { facilityId: two.facility.id, deviceId: randomUUID() }, { ...emptyPush(), visits: [v] });
+    expect(res.rejected[0]?.reason).toBe("unknown_patient");
+
+    const own = visit(p.id, one.nurse.id);
+    await pushChanges(db, { facilityId: one.facility.id, deviceId: randomUUID() }, { ...emptyPush(), visits: [own] });
+    const p2 = patient(one.nurse.id, { ward: "" });
+    const o = { ...observation(p2.id, one.nurse.id), visitId: own.id }; // visit of a different patient
+    await pushChanges(db, { facilityId: one.facility.id, deviceId: randomUUID() }, { ...emptyPush(), patients: [p2], observations: [o] });
+    expect((await db.observation.findUniqueOrThrow({ where: { id: o.id } })).visitId).toBeNull();
   });
 });

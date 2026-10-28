@@ -8,3 +8,5 @@ export * from "./i18n";
 export * from "./labels";
 export * from "./ward";
 export * from "./codes";
+export * from "./identity";
+export * from "./visits";

@@ -64,7 +64,7 @@ export function TopBar({ title, sub, backTo, actions }: { title: string; sub?: s
   );
 }
 
-export function BottomNav({ current }: { current: "ward" | "inventory" | "settings" }) {
+export function BottomNav({ current }: { current: "queue" | "ward" | "inventory" | "settings" }) {
   const { t, lock } = useApp();
   const item = (key: typeof current, href: string, label: string, icon: ReactNode) => (
     <a href={`#${href}`} className={current === key ? "active" : ""} aria-current={current === key ? "page" : undefined}>
@@ -79,7 +79,8 @@ export function BottomNav({ current }: { current: "ward" | "inventory" | "settin
   );
   return (
     <nav className="bottomnav">
-      {item("ward", "/", t("nav.ward"), svg("M3 12h4l3-7 4 14 3-7h4"))}
+      {item("queue", "/queue", t("nav.queue"), svg("M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"))}
+      {item("ward", "/ward", t("nav.ward"), svg("M3 12h4l3-7 4 14 3-7h4"))}
       {item("inventory", "/inventory", t("nav.inventory"), svg("M4 7l8-4 8 4v10l-8 4-8-4zM4 7l8 4 8-4M12 11v10"))}
       {item("settings", "/settings", t("nav.settings"), svg("M12 15a3 3 0 100-6 3 3 0 000 6zM19 12l2-1-1-3-2 .5-1.5-1.5.5-2-3-1-1 2h-2l-1-2-3 1 .5 2L6 8.5 4 8 3 11l2 1v0l-2 1 1 3 2-.5L7.5 16 7 18l3 1 1-2h2l1 2 3-1-.5-2 1.5-1.5 2 .5 1-3z"))}
       <button onClick={() => lock()}>
@@ -163,7 +164,16 @@ export function Segmented<T extends string>({ value, options, onChange, name }: 
   return (
     <div className="segmented" role="radiogroup" aria-label={name}>
       {options.map((o) => (
-        <button key={o.value} type="button" role="radio" aria-checked={value === o.value} className={value === o.value ? "on" : ""} onClick={() => onChange(o.value)}>
+        // Explicit name: a group inside a <label> would otherwise give its first option the field's label.
+        <button
+          key={o.value}
+          type="button"
+          role="radio"
+          aria-checked={value === o.value}
+          aria-label={o.sub ? `${o.label} — ${o.sub}` : o.label}
+          className={value === o.value ? "on" : ""}
+          onClick={() => onChange(o.value)}
+        >
           <strong>{o.label}</strong>
           {o.sub && <small>{o.sub}</small>}
         </button>

@@ -19,6 +19,7 @@ enum Role {
   doctor
   pharmacy
   supervisor
+  reception
 }
 
 model Facility {
@@ -26,6 +27,10 @@ model Facility {
   name       String
   timeZone   String   @default("America/Port-au-Prince")
   mewsConfig Json?
+  /// Prefix of patient numbers, e.g. "HUL" gives HUL-000123.
+  patientPrefix  String?
+  /// Last patient number issued.
+  patientCounter Int      @default(0)
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
@@ -35,6 +40,7 @@ model Facility {
   patients        Patient[]
   observations    Observation[]
   escalations     Escalation[]
+  visits          Visit[]
   items           Item[]
   movements       StockMovement[]
   cabinets        Cabinet[]
@@ -117,9 +123,24 @@ model Patient {
   mrn          String?
   givenName    String
   familyName   String
+  otherNames   String?
   sex          String
   birthYear    Int?
+  /// YYYY-MM-DD when the exact date is known.
+  birthDate          String?
+  /// exact | year | estimated
+  birthDatePrecision String?
   isPregnant   Boolean   @default(false)
+  phone        String?
+  motherName   String?
+  commune      String?
+  address      String?
+  nationalId   String?
+  emergencyName     String?
+  emergencyRelation String?
+  emergencyPhone    String?
+  /// Facility patient number, assigned by the server on first sync.
+  number       String?
   notes        String?
   dischargedAt DateTime?
   createdAt    DateTime
@@ -133,9 +154,44 @@ model Patient {
   facility     Facility      @relation(fields: [facilityId], references: [id], onDelete: Cascade)
   observations Observation[]
   escalations  Escalation[]
+  visits       Visit[]
 
+  @@unique([facilityId, number])
   @@index([facilityId, seq])
   @@index([facilityId, ward])
+}
+
+/// A visit: appointment, outpatient consultation, emergency or inpatient stay.
+/// Last write wins (status moves along the queue).
+model Visit {
+  id             String    @id @db.Uuid
+  facilityId     String    @db.Uuid
+  patientId      String    @db.Uuid
+  kind           String
+  service        String
+  status         String
+  scheduledFor   DateTime?
+  arrivedAt      DateTime?
+  endedAt        DateTime?
+  triageColor    String?
+  chiefComplaint String?
+  assignedTo     String?   @db.Uuid
+  note           String?
+  createdAt      DateTime
+  createdBy      String    @db.Uuid
+  updatedAt      DateTime
+  updatedBy      String    @db.Uuid
+  deviceId       String?   @db.Uuid
+  receivedAt     DateTime  @default(now())
+  seq            BigInt    @default(0)
+
+  facility     Facility      @relation(fields: [facilityId], references: [id], onDelete: Cascade)
+  patient      Patient       @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  observations Observation[]
+
+  @@index([facilityId, seq])
+  @@index([facilityId, arrivedAt])
+  @@index([patientId])
 }
 
 model Observation {
@@ -165,12 +221,14 @@ model Observation {
   patientScanned  Boolean  @default(false)
   /// Instrument per vital sign, e.g. {"spo2": "<equipment id>"}.
   equipment       Json     @default("{}")
+  visitId         String?  @db.Uuid
   deviceId        String?  @db.Uuid
   receivedAt      DateTime @default(now())
   seq             BigInt   @default(0)
 
   facility    Facility     @relation(fields: [facilityId], references: [id], onDelete: Cascade)
   patient     Patient      @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  visit       Visit?       @relation(fields: [visitId], references: [id], onDelete: SetNull)
   escalations Escalation[]
 
   @@index([facilityId, seq])

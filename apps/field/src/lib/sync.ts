@@ -16,7 +16,8 @@ export type SyncOutcome =
   | { status: "staff_inactive" }
   | { status: "error"; message: string };
 
-const TABLES = ["patients", "items", "observations", "escalations", "movements"] as const;
+// Order matters: a visit needs its patient, and vitals may point at a visit.
+const TABLES = ["patients", "items", "visits", "observations", "escalations", "movements"] as const;
 type Table = (typeof TABLES)[number];
 
 let running: Promise<SyncOutcome> | null = null;
@@ -73,7 +74,7 @@ async function pushAll(auth: ApiAuth, key: CryptoKey, db: SwenDb): Promise<{ acc
   const retryLater = new Set<string>();
 
   for (let round = 0; round < 100; round++) {
-    const batch: Record<Table, { id: string }[]> = { patients: [], items: [], observations: [], escalations: [], movements: [] };
+    const batch: Record<Table, { id: string }[]> = { patients: [], items: [], visits: [], observations: [], escalations: [], movements: [] };
     let total = 0;
     for (const table of TABLES) {
       const rows = (await db[table].where("dirty").equals(1).limit(PUSH_BATCH_LIMIT + retryLater.size).toArray()) as unknown as { id: string }[];
@@ -86,6 +87,7 @@ async function pushAll(auth: ApiAuth, key: CryptoKey, db: SwenDb): Promise<{ acc
       // Patients are stored encrypted, so they are sent from a decrypted copy.
       patients: await decryptForPush(key, batch.patients as PatientRow[]),
       items: batch.items.map(strip) as PushRequest["items"],
+      visits: batch.visits.map(strip) as PushRequest["visits"],
       observations: batch.observations.map(strip) as PushRequest["observations"],
       escalations: batch.escalations.map(strip) as PushRequest["escalations"],
       movements: batch.movements.map(strip) as PushRequest["movements"],
@@ -145,7 +147,7 @@ async function pullAll(auth: ApiAuth, session: Session, db: SwenDb): Promise<num
     await applyPull(session.key, data, db);
     await setMeta("clockOffsetMs", clockOffsetMs(data.serverTime, sentAt, receivedAt), db);
     const c = data.changes;
-    pulled += c.patients.length + c.observations.length + c.escalations.length + c.items.length + c.movements.length + (c.equipment?.length ?? 0);
+    pulled += c.patients.length + (c.visits?.length ?? 0) + c.observations.length + c.escalations.length + c.items.length + c.movements.length + (c.equipment?.length ?? 0);
     if (!data.hasMore) break;
   }
   return pulled;
@@ -156,7 +158,7 @@ export async function applyPull(key: CryptoKey, data: PullResponse, db: SwenDb):
   // Encrypt outside the transaction: IndexedDB transactions close on non-IDB awaits.
   const sealedPatients = await Promise.all(c.patients.map((p) => sealPatient(key, p, 0)));
 
-  await db.transaction("rw", [db.meta, db.patients, db.items, db.observations, db.escalations, db.movements, db.equipment], async () => {
+  await db.transaction("rw", [db.meta, db.patients, db.items, db.visits, db.observations, db.escalations, db.movements, db.equipment], async () => {
     // Last-write-wins tables: keep a local unsynced edit only if it is newer.
     const localPatients = await db.patients.bulkGet(sealedPatients.map((p) => p.id));
     const patientsToPut = sealedPatients.filter((incoming, i) => {
@@ -168,6 +170,12 @@ export async function applyPull(key: CryptoKey, data: PullResponse, db: SwenDb):
     const localItems = await db.items.bulkGet(c.items.map((i) => i.id));
     await db.items.bulkPut(
       c.items.filter((incoming, i) => !(localItems[i] && localItems[i]!.dirty === 1 && incomingWins(incoming.updatedAt, localItems[i]!.updatedAt))).map((i) => ({ ...i, dirty: 0 as const })),
+    );
+
+    const visits = c.visits ?? [];
+    const localVisits = await db.visits.bulkGet(visits.map((v) => v.id));
+    await db.visits.bulkPut(
+      visits.filter((incoming, i) => !(localVisits[i] && localVisits[i]!.dirty === 1 && incomingWins(incoming.updatedAt, localVisits[i]!.updatedAt))).map((v) => ({ ...v, dirty: 0 as const })),
     );
 
     // Append-only tables: the server copy is the same record.

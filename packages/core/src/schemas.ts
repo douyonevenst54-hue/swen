@@ -16,21 +16,43 @@ const isoDateTime = z.string().datetime({ offset: true });
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 const optNum = z.number().finite().nullable().optional();
 
-export const Role = z.enum(["nurse", "doctor", "pharmacy", "supervisor"]);
+export const Role = z.enum(["nurse", "doctor", "pharmacy", "supervisor", "reception"]);
 export type Role = z.infer<typeof Role>;
 
 export const Sex = z.enum(["F", "M", "U"]);
 
+const optText = (max: number) => z.string().max(max).nullable().optional();
+
+export const BirthDatePrecisionSchema = z.enum(["exact", "year", "estimated"]);
+
 export const PatientSchema = z.object({
   id: uuid,
-  ward: z.string().min(1).max(60),
+  /** Empty when the patient is not on a ward (outpatient). */
+  ward: z.string().max(60),
   bed: z.string().max(20).nullable().optional(),
   mrn: z.string().max(60).nullable().optional(),
   givenName: z.string().min(1).max(120),
   familyName: z.string().min(1).max(120),
   sex: Sex,
+  /** Maiden name, married name, nickname: any other name the person is known by. */
+  otherNames: optText(200),
   birthYear: z.number().int().min(1900).max(2100).nullable().optional(),
+  /** Full date when known (YYYY-MM-DD). */
+  birthDate: isoDate.nullable().optional(),
+  /** Whether the birth year is exact, the year only, or estimated from the age. */
+  birthDatePrecision: BirthDatePrecisionSchema.nullable().optional(),
   isPregnant: z.boolean().default(false),
+  phone: optText(40),
+  motherName: optText(120),
+  commune: optText(80),
+  /** Section communale, neighbourhood, landmarks. */
+  address: optText(200),
+  nationalId: optText(40),
+  emergencyName: optText(120),
+  emergencyRelation: optText(60),
+  emergencyPhone: optText(40),
+  /** Patient number, assigned by the server in the facility's series (e.g. HUL-000123). */
+  number: optText(30),
   notes: z.string().max(2000).nullable().optional(),
   dischargedAt: isoDateTime.nullable().optional(),
   createdAt: isoDateTime,
@@ -62,8 +84,47 @@ export const ObservationSchema = z.object({
   patientScanned: z.boolean().default(false),
   /** Which registered instrument measured each vital sign, e.g. { spo2: <equipment id> }. */
   equipment: z.record(z.string(), uuid).default({}),
+  /** The visit (e.g. triage at arrival) this reading belongs to. */
+  visitId: uuid.nullable().optional(),
 });
 export type Observation = z.infer<typeof ObservationSchema>;
+
+// ---- Visits ---------------------------------------------------------------------
+
+/**
+ * A visit is the spine of the record: an appointment, an outpatient
+ * consultation, an emergency or an inpatient stay. It moves through the queue
+ * statuses; last write wins.
+ */
+export const VisitKind = z.enum(["outpatient", "emergency", "inpatient"]);
+export type VisitKind = z.infer<typeof VisitKind>;
+export const VisitStatus = z.enum(["booked", "waiting", "triaged", "consulting", "done", "left", "cancelled"]);
+export type VisitStatus = z.infer<typeof VisitStatus>;
+/** Emergency triage colour (South African Triage Scale): red = immediate … green = can wait. */
+export const TriageColor = z.enum(["red", "orange", "yellow", "green"]);
+export type TriageColor = z.infer<typeof TriageColor>;
+
+export const VisitSchema = z.object({
+  id: uuid,
+  patientId: uuid,
+  kind: VisitKind,
+  service: z.string().min(1).max(80),
+  status: VisitStatus,
+  /** Appointment date and time, for booked visits. */
+  scheduledFor: isoDateTime.nullable().optional(),
+  arrivedAt: isoDateTime.nullable().optional(),
+  endedAt: isoDateTime.nullable().optional(),
+  triageColor: TriageColor.nullable().optional(),
+  chiefComplaint: optText(300),
+  /** Doctor the patient is waiting for, if any. */
+  assignedTo: uuid.nullable().optional(),
+  note: optText(1000),
+  createdAt: isoDateTime,
+  createdBy: uuid,
+  updatedAt: isoDateTime,
+  updatedBy: uuid,
+});
+export type Visit = z.infer<typeof VisitSchema>;
 
 export const EquipmentSchema = z.object({
   id: uuid,
@@ -154,6 +215,7 @@ export const PUSH_BATCH_LIMIT = 200;
 
 export const PushRequestSchema = z.object({
   patients: z.array(PatientSchema).max(PUSH_BATCH_LIMIT).default([]),
+  visits: z.array(VisitSchema).max(PUSH_BATCH_LIMIT).default([]),
   observations: z.array(ObservationSchema).max(PUSH_BATCH_LIMIT).default([]),
   escalations: z.array(EscalationSchema).max(PUSH_BATCH_LIMIT).default([]),
   items: z.array(ItemSchema).max(PUSH_BATCH_LIMIT).default([]),
@@ -175,6 +237,7 @@ export interface PushResponse {
 
 export type RejectReason =
   | "unknown_patient"
+  | "unknown_visit"
   | "unknown_observation"
   | "unknown_item"
   | "unknown_staff"
@@ -182,7 +245,7 @@ export type RejectReason =
   | "duplicate_code"
   | "invalid";
 
-export const RETRYABLE_REASONS: ReadonlySet<RejectReason> = new Set(["unknown_patient", "unknown_observation", "unknown_item"]);
+export const RETRYABLE_REASONS: ReadonlySet<RejectReason> = new Set(["unknown_patient", "unknown_observation", "unknown_item", "unknown_visit"]);
 
 export interface PullResponse {
   cursor: string;
@@ -192,6 +255,7 @@ export interface PullResponse {
   staff: Staff[];
   changes: {
     patients: Patient[];
+    visits: Visit[];
     observations: Observation[];
     escalations: Escalation[];
     items: Item[];

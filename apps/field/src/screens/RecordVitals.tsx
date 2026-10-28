@@ -25,7 +25,7 @@ function num(s: string): number | null {
   return Number.isFinite(n) ? n : Number.NaN;
 }
 
-export function RecordVitals({ patientId, correctId }: { patientId: string; correctId: string | null }) {
+export function RecordVitals({ patientId, correctId, visitId = null, next = null }: { patientId: string; correctId: string | null; visitId?: string | null; next?: string | null }) {
   const { t, mews, changed, fmtTime } = useApp();
   const session = useSession();
   const [patient, setPatient] = useState<LocalPatient | null>(null);
@@ -119,13 +119,13 @@ export function RecordVitals({ patientId, correctId }: { patientId: string; corr
       const { observation, mews: score } = await addObservation(
         session,
         patient,
-        { ...values, sources: clean, note, patientScanned: identity === "ok", equipment },
+        { ...values, sources: clean, note, patientScanned: identity === "ok", equipment, visitId },
         { supersedes: original ?? undefined },
       );
       changed();
       // Anything above routine monitoring asks the nurse what they did.
-      const next = score.level !== "low" ? `#/escalate/${observation.id}` : `#/patient/${patient.id}`;
-      window.location.replace(next);
+      const after = score.level !== "low" ? `#/escalate/${observation.id}` : next === "queue" ? "#/queue" : `#/patient/${patient.id}`;
+      window.location.replace(after);
     } finally {
       setBusy(false);
     }

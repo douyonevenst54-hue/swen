@@ -36,7 +36,8 @@ export async function wardBoard(db: Db, facilityId: string, now = Date.now()): P
   const facility = await db.facility.findUniqueOrThrow({ where: { id: facilityId }, select: { mewsConfig: true } });
   const config = resolveMewsConfig(facility.mewsConfig);
   const patients = await db.patient.findMany({
-    where: { facilityId, dischargedAt: null },
+    // Only patients on a ward; outpatients have no ward.
+    where: { facilityId, dischargedAt: null, ward: { not: "" } },
     select: { id: true, ward: true, bed: true, givenName: true, familyName: true, birthYear: true, isPregnant: true },
   });
   const ids = patients.map((p) => p.id);
